@@ -1,0 +1,137 @@
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(245, 189, 48, 0.35), transparent 45%),
+    radial-gradient(circle at 80% 10%, rgba(56, 189, 248, 0.25), transparent 40%),
+    linear-gradient(135deg, #e9f0ff 0%, #f9fbff 55%, #fff5e6 100%);
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 430px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 28px;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.08);
+}
+
+.auth-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  text-decoration: none;
+  font-size: 32px;
+  font-weight: 700;
+  margin-bottom: 22px;
+}
+
+.auth-logo-3d {
+  color: #000000;
+}
+
+.auth-logo-ip {
+  color: #f5bd30;
+}
+
+.auth-title {
+  font-size: 28px;
+  color: #0f172a;
+  line-height: 1.2;
+  margin-bottom: 8px;
+}
+
+.auth-subtitle {
+  color: #475569;
+  margin-bottom: 20px;
+}
+
+.auth-form {
+  display: grid;
+  gap: 14px;
+}
+
+.auth-field {
+  display: grid;
+  gap: 6px;
+}
+
+.auth-field label {
+  font-size: 14px;
+  color: #334155;
+}
+
+.auth-field input {
+  width: 100%;
+  height: 44px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 0 12px;
+  font-size: 15px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.auth-field input:focus {
+  border-color: #f5bd30;
+  box-shadow: 0 0 0 3px rgba(245, 189, 48, 0.2);
+}
+
+.auth-submit {
+  margin-top: 6px;
+  height: 46px;
+  border: none;
+  border-radius: 10px;
+  background: #f5bd30;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.2s;
+}
+
+.auth-submit:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(245, 189, 48, 0.35);
+}
+
+.auth-submit:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.auth-message {
+  margin: 0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.auth-message--error {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.auth-message--success {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.auth-switch {
+  margin-top: 16px;
+  color: #475569;
+  font-size: 14px;
+  text-align: center;
+}
+
+.auth-link {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.auth-link:hover {
+  text-decoration: underline;
+}
