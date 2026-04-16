@@ -497,6 +497,69 @@ def create_executor():
         return jsonify({'message': f'Executor creation failed: {str(error)}'}), 500
 
 
+@app.put('/api/executors')
+def update_executor():
+    payload = request.get_json(silent=True) or {}
+
+    user_id = payload.get('userId')
+    executor_type = (payload.get('executorType') or '').strip().lower()
+    first_name = (payload.get('firstName') or '').strip()
+    last_name = (payload.get('lastName') or '').strip()
+    phone = (payload.get('phone') or '').strip()
+    organization_name = (payload.get('organizationName') or '').strip()
+    organization_address = (payload.get('organizationAddress') or '').strip()
+
+    if user_id is None or not str(user_id).isdigit():
+        return jsonify({'message': 'userId is required'}), 400
+
+    if executor_type not in ('individual', 'organization'):
+        return jsonify({'message': 'executorType must be individual or organization'}), 400
+
+    if not first_name or not last_name or not phone:
+        return jsonify({'message': 'firstName, lastName and phone are required'}), 400
+
+    if executor_type == 'organization' and (not organization_name or not organization_address):
+        return jsonify({'message': 'organizationName and organizationAddress are required'}), 400
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute('SELECT id FROM executors WHERE user_id = %s', (int(user_id),))
+                row = cur.fetchone()
+                if row is None:
+                    return jsonify({'message': 'Executor not found'}), 404
+
+                cur.execute(
+                    '''
+                    UPDATE executors
+                    SET executor_type = %s,
+                        first_name = %s,
+                        last_name = %s,
+                        phone = %s,
+                        organization_name = %s,
+                        organization_address = %s
+                    WHERE user_id = %s
+                    RETURNING id, user_id, executor_type, first_name, last_name, phone,
+                              organization_name, organization_address, created_at
+                    ''',
+                    (
+                        executor_type,
+                        first_name,
+                        last_name,
+                        phone,
+                        organization_name if executor_type == 'organization' else None,
+                        organization_address if executor_type == 'organization' else None,
+                        int(user_id),
+                    ),
+                )
+                executor = cur.fetchone()
+            conn.commit()
+
+        return jsonify({'executor': executor}), 200
+    except Exception as error:
+        return jsonify({'message': f'Executor update failed: {str(error)}'}), 500
+
+
 @app.get('/api/orders')
 def list_orders():
     user_id = request.args.get('userId', '').strip()

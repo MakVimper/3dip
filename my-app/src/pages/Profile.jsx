@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import Header from '../components/Header';
 import './Profile.css';
+import './ExecutorCabinet.css';
 
 const goTo = (path) => {
   window.history.pushState({}, '', path);
@@ -22,8 +23,6 @@ const catalogServices = [
   'Печать высокоточных моделей',
   'Крупногабаритная печать',
 ];
-
-
 
 const getOrderExecutorLabel = (order) => {
   if (!order) return '';
@@ -50,11 +49,7 @@ const getTabFromLocation = () => {
 const Profile = () => {
   const user = useMemo(() => {
     const raw = localStorage.getItem('auth_user');
-
-    if (!raw) {
-      return null;
-    }
-
+    if (!raw) return null;
     try {
       return JSON.parse(raw);
     } catch {
@@ -85,6 +80,17 @@ const Profile = () => {
   });
   const [orderErrors, setOrderErrors] = useState({});
   const [executor, setExecutor] = useState(null);
+  const [executorForm, setExecutorForm] = useState({
+    firstName: '',
+    lastName: '',
+    phone: '',
+    executorType: 'individual',
+    organizationName: '',
+    organizationAddress: '',
+  });
+  const [executorFormMessage, setExecutorFormMessage] = useState('');
+  const [isExecutorFormError, setIsExecutorFormError] = useState(false);
+  const [isExecutorSaving, setIsExecutorSaving] = useState(false);
   const [isExecutorLoading, setIsExecutorLoading] = useState(false);
   const [executorMessage, setExecutorMessage] = useState('');
   const [marketOrders, setMarketOrders] = useState([]);
@@ -126,7 +132,6 @@ const Profile = () => {
   const [cabinetMessage, setCabinetMessage] = useState('');
   const [isCabinetError, setIsCabinetError] = useState(false);
 
-
   const isChatLockedForUser = (orderUserId, acceptedExecutorUserId) => {
     if (!user?.id) return false;
     if (!acceptedExecutorUserId) return false;
@@ -141,7 +146,6 @@ const Profile = () => {
       try {
         const response = await fetch(`/api/users/${user.id}`);
         const data = await response.json();
-
         if (response.ok && data.user) {
           setForm({
             name: data.user.name || '',
@@ -165,7 +169,6 @@ const Profile = () => {
       try {
         const response = await fetch(`/api/executors/cabinet?userId=${user.id}`);
         const data = await response.json();
-
         if (response.ok && data.cabinet) {
           setCabinetForm({
             about: data.cabinet.about || '',
@@ -202,6 +205,86 @@ const Profile = () => {
     } finally {
       setIsExecutorLoading(false);
     }
+  };
+
+  useEffect(() => {
+    if (!executor) return;
+
+    setExecutorForm({
+      firstName: executor.first_name || '',
+      lastName: executor.last_name || '',
+      phone: executor.phone || '',
+      executorType: executor.executor_type || 'individual',
+      organizationName: executor.organization_name || '',
+      organizationAddress: executor.organization_address || '',
+    });
+  }, [executor]);
+
+  const saveExecutor = async () => {
+    if (!user?.id) return;
+
+    setIsExecutorSaving(true);
+    setExecutorFormMessage('');
+    setIsExecutorFormError(false);
+
+    const firstName = (executorForm.firstName || '').trim();
+    const lastName = (executorForm.lastName || '').trim();
+    const phone = (executorForm.phone || '').trim();
+    const executorType = (executorForm.executorType || 'individual').trim();
+    const organizationName = (executorForm.organizationName || '').trim();
+    const organizationAddress = (executorForm.organizationAddress || '').trim();
+
+    if (!firstName || !lastName || !phone) {
+      setExecutorFormMessage('Имя, фамилия и телефон обязательны.');
+      setIsExecutorFormError(true);
+      setIsExecutorSaving(false);
+      return false;
+    }
+
+    if (executorType === 'organization' && (!organizationName || !organizationAddress)) {
+      setExecutorFormMessage('Для организации нужны название и адрес.');
+      setIsExecutorFormError(true);
+      setIsExecutorSaving(false);
+      return false;
+    }
+
+    try {
+      const response = await fetch('/api/executors', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          executorType,
+          firstName,
+          lastName,
+          phone,
+          organizationName,
+          organizationAddress,
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || `Ошибка сохранения профиля (HTTP ${response.status})`);
+      }
+
+      setExecutor(data.executor || null);
+      setExecutorFormMessage('Профиль исполнителя сохранен успешно.');
+      setIsExecutorFormError(false);
+      return true;
+    } catch (error) {
+      setExecutorFormMessage(error.message || 'Ошибка сохранения профиля исполнителя');
+      setIsExecutorFormError(true);
+      return false;
+    } finally {
+      setIsExecutorSaving(false);
+    }
+  };
+
+  const saveExecutorAndCabinet = async () => {
+    const executorOk = await saveExecutor();
+    await saveCabinet();
+    return executorOk;
   };
 
   const loadMarketOrders = async () => {
@@ -450,9 +533,7 @@ const Profile = () => {
 
   const scrollChatsToBottom = () => {
     [chatBodyRef.current, chatBodyModalRef.current].forEach((node) => {
-      if (node) {
-        node.scrollTop = node.scrollHeight;
-      }
+      if (node) node.scrollTop = node.scrollHeight;
     });
   };
 
@@ -465,7 +546,6 @@ const Profile = () => {
     if (!data) return;
     setPreviewFile({ open: true, name: name || 'Файл', data });
   };
-
 
   const openUserProfile = (userId) => {
     if (!userId) return;
@@ -495,9 +575,7 @@ const Profile = () => {
   };
 
   const setTab = (tab) => {
-    if (tab !== 'chats') {
-      setActiveChat(null);
-    }
+    if (tab !== 'chats') setActiveChat(null);
     setActiveTab(tab);
     const nextUrl = tab === 'about' ? '/profile' : `/profile?tab=${tab}`;
     window.history.pushState({}, '', nextUrl);
@@ -507,25 +585,13 @@ const Profile = () => {
   useEffect(() => {
     const applyTab = () => {
       const nextTab = getTabFromLocation();
-      if (nextTab !== 'chats') {
-        setActiveChat(null);
-      }
+      if (nextTab !== 'chats') setActiveChat(null);
       setActiveTab(nextTab);
-      if (nextTab === 'orders') {
-        loadOrders();
-      }
-      if (nextTab === 'executor') {
-        loadExecutor();
-      }
-      if (nextTab === 'market') {
-        loadMarketOrders();
-      }
-      if (nextTab === 'chats') {
-        loadChatThreads();
-      }
-      if (nextTab === 'about') {
-        loadProfileReviews();
-      }
+      if (nextTab === 'orders') loadOrders();
+      if (nextTab === 'executor') loadExecutor();
+      if (nextTab === 'market') loadMarketOrders();
+      if (nextTab === 'chats') loadChatThreads();
+      if (nextTab === 'about') loadProfileReviews();
     };
 
     applyTab();
@@ -580,11 +646,7 @@ const Profile = () => {
 
   const handleLogout = () => {
     const shouldLogout = window.confirm('Вы точно хотите выйти с аккаунта?');
-
-    if (!shouldLogout) {
-      return;
-    }
-
+    if (!shouldLogout) return;
     localStorage.removeItem('auth_user');
     window.dispatchEvent(new Event('auth:changed'));
     goTo('/');
@@ -606,7 +668,7 @@ const Profile = () => {
 
     if (file.size > 1024 * 1024) {
       setIsError(true);
-      setMessage('\u0424\u0430\u0439\u043b \u0441\u043b\u0438\u0448\u043a\u043e\u043c \u0431\u043e\u043b\u044c\u0448\u043e\u0439. \u0414\u043e 1 \u041c\u0411.');
+      setMessage('Файл слишком большой. До 1 МБ.');
       return;
     }
 
@@ -626,6 +688,7 @@ const Profile = () => {
       reader.readAsDataURL(file);
     });
 
+  // ИСПРАВЛЕНО: убрана случайная установка сообщения об ошибке
   const toggleCabinetService = (service) => {
     setCabinetForm((prev) => {
       const hasService = prev.services.includes(service);
@@ -634,8 +697,6 @@ const Profile = () => {
         : [...prev.services, service];
       return { ...prev, services: nextServices };
     });
-    setCabinetMessage('\u041e\u0448\u0438\u0431\u043a\u0430 \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u044f \u043a\u0430\u0431\u0438\u043d\u0435\u0442\u0430.');
-    setIsCabinetError(false);
   };
 
   const onCompanyAvatarChange = async (event) => {
@@ -644,7 +705,7 @@ const Profile = () => {
 
     if (file.size > 2 * 1024 * 1024) {
       setIsCabinetError(true);
-      setCabinetMessage('\u0424\u0430\u0439\u043b \u0441\u043b\u0438\u0448\u043a\u043e\u043c \u0431\u043e\u043b\u044c\u0448\u043e\u0439. \u0414\u043e 2 \u041c\u0411.');
+      setCabinetMessage('Файл слишком большой. До 2 МБ.');
       return;
     }
 
@@ -655,7 +716,7 @@ const Profile = () => {
       setIsCabinetError(false);
     } catch {
       setIsCabinetError(true);
-      setCabinetMessage('\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0430\u0432\u0430\u0442\u0430\u0440.');
+      setCabinetMessage('Не удалось загрузить аватар.');
     }
   };
 
@@ -668,7 +729,7 @@ const Profile = () => {
     const remaining = maxWorks - cabinetForm.works.length;
     if (remaining <= 0) {
       setIsCabinetError(true);
-      setCabinetMessage(`\u041c\u043e\u0436\u043d\u043e \u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u0434\u043e ${maxWorks} \u0444\u043e\u0442\u043e.`);
+      setCabinetMessage(`Можно добавить до ${maxWorks} фото.`);
       return;
     }
 
@@ -676,7 +737,7 @@ const Profile = () => {
     const oversized = selected.find((file) => file.size > 2 * 1024 * 1024);
     if (oversized) {
       setIsCabinetError(true);
-      setCabinetMessage('\u041e\u0434\u043d\u043e \u0438\u0437 \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0439 \u0431\u043e\u043b\u044c\u0448\u0435 2 \u041c\u0411.');
+      setCabinetMessage('Одно из изображений больше 2 МБ.');
       return;
     }
 
@@ -689,14 +750,14 @@ const Profile = () => {
       setCabinetForm((prev) => ({ ...prev, works: [...prev.works, ...nextWorks] }));
       if (files.length > remaining) {
         setIsCabinetError(true);
-        setCabinetMessage(`\u041c\u043e\u0436\u043d\u043e \u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u0434\u043e ${maxWorks} \u0444\u043e\u0442\u043e.`);
+        setCabinetMessage(`Можно добавить до ${maxWorks} фото.`);
       } else {
         setCabinetMessage('');
         setIsCabinetError(false);
       }
     } catch {
       setIsCabinetError(true);
-      setCabinetMessage('\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f.');
+      setCabinetMessage('Не удалось загрузить изображения.');
     }
   };
 
@@ -812,20 +873,10 @@ const Profile = () => {
 
   const validateOrderForm = () => {
     const errors = {};
-
-    if (!orderForm.service) {
-      errors.service = 'Выберите услугу из каталога';
-    }
-    if (!orderForm.details.trim()) {
-      errors.details = 'Заполните описание задачи';
-    }
-    if (!orderForm.budget || Number(orderForm.budget) <= 0) {
-      errors.budget = 'Укажите корректный бюджет';
-    }
-    if (!orderForm.deadline) {
-      errors.deadline = 'Выберите срок выполнения';
-    }
-
+    if (!orderForm.service) errors.service = 'Выберите услугу из каталога';
+    if (!orderForm.details.trim()) errors.details = 'Заполните описание задачи';
+    if (!orderForm.budget || Number(orderForm.budget) <= 0) errors.budget = 'Укажите корректный бюджет';
+    if (!orderForm.deadline) errors.deadline = 'Выберите срок выполнения';
     return errors;
   };
 
@@ -833,14 +884,8 @@ const Profile = () => {
     event.preventDefault();
     const errors = validateOrderForm();
     setOrderErrors(errors);
-
-    if (Object.keys(errors).length > 0) {
-      return;
-    }
-
-    if (!user?.id) {
-      return;
-    }
+    if (Object.keys(errors).length > 0) return;
+    if (!user?.id) return;
 
     try {
       const response = await fetch('/api/orders', {
@@ -882,9 +927,7 @@ const Profile = () => {
   };
 
   useEffect(() => {
-    if (!executor) {
-      setChatMode('customer');
-    }
+    if (!executor) setChatMode('customer');
   }, [executor]);
 
   const filteredChatThreads = useMemo(() => {
@@ -899,7 +942,6 @@ const Profile = () => {
     }
     return chatThreads;
   }, [chatThreads, chatMode, user]);
-
 
   if (!user) {
     return (
@@ -934,20 +976,14 @@ const Profile = () => {
             <button
               type="button"
               className={`profile-tab ${activeTab === 'orders' ? 'profile-tab--active' : ''}`}
-              onClick={() => {
-                setTab('orders');
-                loadOrders();
-              }}
+              onClick={() => { setTab('orders'); loadOrders(); }}
             >
               Мои заказы
             </button>
             <button
               type="button"
               className={`profile-tab ${activeTab === 'executor' ? 'profile-tab--active' : ''}`}
-              onClick={() => {
-                setTab('executor');
-                loadExecutor();
-              }}
+              onClick={() => { setTab('executor'); loadExecutor(); }}
             >
               Рабочий кабинет
             </button>
@@ -955,10 +991,7 @@ const Profile = () => {
               <button
                 type="button"
                 className={`profile-tab ${activeTab === 'market' ? 'profile-tab--active' : ''}`}
-                onClick={() => {
-                  setTab('market');
-                  loadMarketOrders();
-                }}
+                onClick={() => { setTab('market'); loadMarketOrders(); }}
               >
                 Найти заказ
               </button>
@@ -966,205 +999,251 @@ const Profile = () => {
             <button
               type="button"
               className={`profile-tab ${activeTab === 'chats' ? 'profile-tab--active' : ''}`}
-              onClick={() => {
-                setTab('chats');
-                loadChatThreads();
-              }}
+              onClick={() => { setTab('chats'); loadChatThreads(); }}
             >
               Чаты
             </button>
           </div>
 
-          
-
+          {/* ===== ВКЛАДКА: РАБОЧИЙ КАБИНЕТ ===== */}
           {activeTab === 'executor' && (
             <section className="profile-card profile-card--executor">
-              <div className="orders-header">
+              <div className="executor-page-header">
                 <div>
                   <h2>Профиль исполнителя</h2>
-                  <p>Информация о профиле и рабочем кабинете исполнителя.</p>
+                  <p>Заполните кабинет, чтобы заказчики сразу понимали ваш опыт и услуги.</p>
                 </div>
               </div>
 
-              {executorMessage && <p className="orders-message">{executorMessage}</p>}
+              {executorMessage && <p className="profile-message profile-message--error">{executorMessage}</p>}
 
               {isExecutorLoading ? (
                 <p className="orders-empty">Проверяем статус исполнителя...</p>
               ) : !executor ? (
-                <div>
-                  <p className="profile-executor-text">Вы еще не зарегистрированы как исполнитель.</p>
-                  <p className="profile-executor-text">Регистрация доступна через кнопку в хедере «Стать исполнителем».</p>
+                <div className="editor-card" style={{ textAlign: 'center', padding: '40px 24px' }}>
+                  <p style={{ fontSize: 15, color: 'var(--ec-text-secondary)', marginBottom: 8 }}>Вы ещё не зарегистрированы как исполнитель.</p>
+                  <p style={{ fontSize: 13, color: 'var(--ec-text-muted)' }}>Регистрация доступна через кнопку в хедере «Стать исполнителем».</p>
                 </div>
               ) : (
-                <>
-                  <div className="executor-grid">
-                    <div className="executor-row">
-                      <span className="executor-label">Имя:</span>
-                      <span className="executor-value">{executor.first_name}</span>
-                    </div>
-                    <div className="executor-row">
-                      <span className="executor-label">Фамилия:</span>
-                      <span className="executor-value">{executor.last_name}</span>
-                    </div>
-                    <div className="executor-row">
-                      <span className="executor-label">Телефон:</span>
-                      <span className="executor-value">{executor.phone}</span>
-                    </div>
-                    <div className="executor-row">
-                      <span className="executor-label">Тип:</span>
-                      <span className="executor-value">
-                        {executor.executor_type === 'organization' ? 'Организация' : 'Частный исполнитель'}
-                      </span>
-                    </div>
-                    {executor.executor_type === 'organization' && (
-                      <>
-                        <div className="executor-row">
-                          <span className="executor-label">Организация:</span>
-                          <span className="executor-value">{executor.organization_name}</span>
-                        </div>
-                        <div className="executor-row">
-                          <span className="executor-label">Адрес:</span>
-                          <span className="executor-value">{executor.organization_address}</span>
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  <div className="profile-section-divider" />
-
-                  <div className="cabinet-block">
-                    <div className="orders-header">
+                <div className="executor-layout executor-layout--combined">
+                  <div className="executor-editor">
+                    <div className="executor-editor__intro">
+                      <h3>Аккаунт и рабочий кабинет</h3>
+                      <p>Настройте карточку, чтобы заказчик быстро оценил ваши услуги и опыт.</p>
                     </div>
 
-                    {cabinetMessage && (
-                      <p
-                        className={`profile-message ${isCabinetError ? 'profile-message--error' : 'profile-message--ok'}`}
-                      >
-                        {cabinetMessage}
-                      </p>
+                    {(executorFormMessage || cabinetMessage) && (
+                      <div className="executor-editor__alerts">
+                        {executorFormMessage && (
+                          <p className={`profile-message ${isExecutorFormError ? 'profile-message--error' : 'profile-message--ok'}`}>
+                            {executorFormMessage}
+                          </p>
+                        )}
+                        {cabinetMessage && (
+                          <p className={`profile-message ${isCabinetError ? 'profile-message--error' : 'profile-message--ok'}`}>
+                            {cabinetMessage}
+                          </p>
+                        )}
+                      </div>
                     )}
 
-                    <div className="cabinet-grid">
-                      <div className="cabinet-column">
-                        <label className="cabinet-field">
-                          <span>О себе</span>
-                          <textarea
-                            rows="5"
-                            placeholder="Коротко опишите опыт, команду и сильные стороны."
-                            value={cabinetForm.about}
-                            onChange={(event) =>
-                              setCabinetForm((prev) => ({ ...prev, about: event.target.value }))
-                            }
-                          />
-                        </label>
+                    {/* Row 1: Basic info + Brand */}
+                    <div className="executor-editor__top">
 
-                        <div className="cabinet-field">
-                          <span>Услуги каталога</span>
-                          <div className="cabinet-services">
-                            {catalogServices.map((service) => {
-                              const isActive = cabinetForm.services.includes(service);
-                              return (
-                                <label
-                                  key={service}
-                                  className={`cabinet-service ${isActive ? 'cabinet-service--active' : ''}`}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={isActive}
-                                    onChange={() => toggleCabinetService(service)}
-                                  />
-                                  <span>{service}</span>
-                                </label>
-                              );
-                            })}
+                      {/* Basic info */}
+                      <section className="editor-card">
+                        <div className="editor-card__head">
+                          <div>
+                            <h4>Основная информация</h4>
+                            <p>Заполните ключевые данные о себе.</p>
                           </div>
-                          {cabinetForm.services.length > 0 && (
-                            <div className="cabinet-tags">
-                              {cabinetForm.services.map((service) => (
-                                <span key={service} className="cabinet-tag">
-                                  {service}
-                                </span>
-                              ))}
-                            </div>
+                          <span className="editor-card__badge">О исполнителе</span>
+                        </div>
+                        <div className="editor-grid">
+                          <label className="editor-field">
+                            <span>Имя</span>
+                            <input className="editor-input" type="text" placeholder="Александр"
+                              value={executorForm.firstName}
+                              onChange={(e) => setExecutorForm((p) => ({ ...p, firstName: e.target.value }))} />
+                          </label>
+                          <label className="editor-field">
+                            <span>Фамилия</span>
+                            <input className="editor-input" type="text" placeholder="Иванов"
+                              value={executorForm.lastName}
+                              onChange={(e) => setExecutorForm((p) => ({ ...p, lastName: e.target.value }))} />
+                          </label>
+                          <label className="editor-field">
+                            <span>Телефон</span>
+                            <input className="editor-input" type="tel" placeholder="+7 (999) 000-00-00"
+                              value={executorForm.phone}
+                              onChange={(e) => setExecutorForm((p) => ({ ...p, phone: e.target.value }))} />
+                          </label>
+                          <label className="editor-field">
+                            <span>Тип</span>
+                            <select className="editor-input" value={executorForm.executorType}
+                              onChange={(e) => setExecutorForm((p) => ({ ...p, executorType: e.target.value }))}>
+                              <option value="individual">Частный исполнитель</option>
+                              <option value="organization">Организация</option>
+                            </select>
+                          </label>
+                          {executorForm.executorType === 'organization' && (
+                            <>
+                              <label className="editor-field editor-field--full">
+                                <span>Название организации</span>
+                                <input className="editor-input" type="text" placeholder="ООО «Пример»"
+                                  value={executorForm.organizationName}
+                                  onChange={(e) => setExecutorForm((p) => ({ ...p, organizationName: e.target.value }))} />
+                              </label>
+                              <label className="editor-field editor-field--full">
+                                <span>Адрес</span>
+                                <input className="editor-input" type="text" placeholder="г. Алматы, ул. Примерная, 1"
+                                  value={executorForm.organizationAddress}
+                                  onChange={(e) => setExecutorForm((p) => ({ ...p, organizationAddress: e.target.value }))} />
+                              </label>
+                            </>
                           )}
                         </div>
-                      </div>
+                      </section>
 
-                      <div className="cabinet-column">
-                        <div className="cabinet-field">
-                          <span>Аватар компании</span>
-                          <div className="cabinet-avatar">
+                      {/* Brand / avatar */}
+                      <section className="editor-card editor-card--brand">
+                        <div className="editor-card__head">
+                          <div>
+                            <h4>Айдентика</h4>
+                            <p>Логотип или аватар команды.</p>
+                          </div>
+                          <span className="editor-card__badge">Бренд</span>
+                        </div>
+                        <div className="brand-card">
+                          <div className="cabinet-avatar cabinet-avatar--large">
                             {cabinetForm.companyAvatar ? (
                               <img src={cabinetForm.companyAvatar} alt="Компания" />
                             ) : (
-                              <div className="cabinet-avatar__placeholder">Логотип</div>
-                            )}
-                          </div>
-                          <label className="profile-btn profile-btn--ghost" htmlFor="company-avatar-upload">
-                            Загрузить аватар
-                          </label>
-                          <input
-                            id="company-avatar-upload"
-                            className="profile-avatar-input"
-                            type="file"
-                            accept="image/*"
-                            onChange={onCompanyAvatarChange}
-                          />
-                          <small className="profile-note">PNG/JPG, до 2 МБ.</small>
-                        </div>
-
-                        <div className="cabinet-field">
-                          <span>Фото выполненных работ</span>
-                          <div className="cabinet-works">
-                            <label className="profile-btn profile-btn--ghost" htmlFor="works-upload">
-                              Добавить фото
-                            </label>
-                            <input
-                              id="works-upload"
-                              className="profile-avatar-input"
-                              type="file"
-                              accept="image/*"
-                              multiple
-                              onChange={onWorksChange}
-                            />
-                            <small className="profile-note">Можно добавить несколько изображений.</small>
-                            {cabinetForm.works.length === 0 ? (
-                              <p className="orders-empty">Пока нет загруженных работ.</p>
-                            ) : (
-                              <div className="cabinet-works-grid">
-                                {cabinetForm.works.map((work, index) => (
-                                  <div key={`${work.name || 'work'}-${index}`} className="cabinet-work">
-                                    <img src={work.data} alt={work.name || 'Работа'} />
-                                    <button
-                                      type="button"
-                                      className="cabinet-work__remove"
-                                      onClick={() => removeWork(index)}
-                                    >
-                                      Удалить
-                                    </button>
-                                  </div>
-                                ))}
+                              <div className="cabinet-avatar__placeholder">
+                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5">
+                                  <rect x="3" y="3" width="18" height="18" rx="4"/>
+                                  <circle cx="8.5" cy="8.5" r="1.5"/>
+                                  <polyline points="21 15 16 10 5 21"/>
+                                </svg>
+                                <span style={{ marginTop: 6, fontSize: 11 }}>Логотип</span>
                               </div>
                             )}
                           </div>
+                          <div className="brand-card__actions">
+                            <label className="profile-btn profile-btn--ghost" htmlFor="company-avatar-upload">
+                              Загрузить аватар
+                            </label>
+                            <input id="company-avatar-upload" className="profile-avatar-input"
+                              type="file" accept="image/*" onChange={onCompanyAvatarChange} />
+                            <small className="profile-note">PNG/JPG, до 2 МБ.</small>
+                          </div>
                         </div>
-                      </div>
+                      </section>
                     </div>
 
-                    <button
-                      type="button"
-                      className="profile-btn profile-btn--action"
-                      onClick={saveCabinet}
-                    >
-                      Сохранить кабинет
+                    {/* О себе */}
+                    <section className="editor-card">
+                      <div className="editor-card__head">
+                        <div><h4>О себе</h4><p>Опыт, команда, сильные стороны.</p></div>
+                        <span className="editor-card__badge">Описание</span>
+                      </div>
+                      <label className="editor-field editor-field--full">
+                        <textarea className="editor-textarea" rows="5"
+                          placeholder="Например: 5 лет в 3D-печати, делаем прототипы и несерийное производство."
+                          value={cabinetForm.about}
+                          onChange={(e) => setCabinetForm((p) => ({ ...p, about: e.target.value }))} />
+                      </label>
+                    </section>
+
+                    {/* Каталог услуг */}
+                    <section className="editor-card">
+                      <div className="editor-card__head">
+                        <div><h4>Каталог услуг</h4><p>Выберите услуги, которые вы можете выполнить.</p></div>
+                        <span className="editor-card__badge">Услуги</span>
+                      </div>
+                      <div className="services-grid">
+                        {catalogServices.map((service) => {
+                          const isActive = cabinetForm.services.includes(service);
+                          return (
+                            <label key={service} className={`service-card ${isActive ? 'service-card--active' : ''}`}>
+                              <input type="checkbox" checked={isActive} onChange={() => toggleCabinetService(service)} />
+                              <div className="service-card__content">
+                                <span className="service-card__title">{service}</span>
+                                <span className="service-card__note">Услуга из каталога</span>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      {cabinetForm.services.length > 0 && (
+                        <div className="cabinet-tags">
+                          {cabinetForm.services.map((s) => <span key={s} className="cabinet-tag">{s}</span>)}
+                        </div>
+                      )}
+                    </section>
+
+                    {/* Галерея работ */}
+                    <section className="editor-card">
+                      <div className="editor-card__head">
+                        <div><h4>Галерея работ</h4><p>Фото макетов и готовых деталей — до 12 изображений.</p></div>
+                        <span className="editor-card__badge">Портфолио</span>
+                      </div>
+                      <div className="cabinet-works">
+                        {cabinetForm.works.length === 0 ? (
+                          <label htmlFor="works-upload" className="works-drop-zone"
+                            onMouseEnter={(e) => { e.currentTarget.style.borderColor='var(--ec-accent)'; e.currentTarget.style.background='var(--ec-accent-soft)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.borderColor='var(--ec-border)'; e.currentTarget.style.background='#f8fafc'; }}
+                            style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:10, padding:'40px 20px', border:'2px dashed var(--ec-border)', borderRadius:'var(--ec-radius-sm)', cursor:'pointer', background:'#f8fafc', transition:'border-color .18s, background .18s' }}>
+                            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5">
+                              <rect x="3" y="3" width="18" height="18" rx="3"/>
+                              <circle cx="8.5" cy="8.5" r="1.5"/>
+                              <polyline points="21 15 16 10 5 21"/>
+                            </svg>
+                            <span style={{ fontFamily:'Inter,sans-serif', fontSize:14, color:'var(--ec-text-secondary)', fontWeight:500 }}>
+                              Нажмите, чтобы добавить фото
+                            </span>
+                            <small className="profile-note">PNG/JPG, до 2 МБ каждое</small>
+                          </label>
+                        ) : (
+                          <div className="cabinet-works-grid">
+                            {cabinetForm.works.map((work, index) => (
+                              <div key={`${work.name || 'work'}-${index}`} className="cabinet-work">
+                                <img src={work.data} alt={work.name || 'Работа'} />
+                                <button type="button" className="cabinet-work__remove" onClick={() => removeWork(index)}>
+                                  Удалить
+                                </button>
+                              </div>
+                            ))}
+                            {cabinetForm.works.length < 12 && (
+                              <label htmlFor="works-upload"
+                                onMouseEnter={(e) => { e.currentTarget.style.borderColor='var(--ec-accent)'; e.currentTarget.style.background='var(--ec-accent-soft)'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.borderColor='var(--ec-border)'; e.currentTarget.style.background='#f8fafc'; }}
+                                style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:6, border:'2px dashed var(--ec-border)', borderRadius:'var(--ec-radius-sm)', cursor:'pointer', background:'#f8fafc', aspectRatio:'1', transition:'border-color .18s, background .18s' }}>
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2">
+                                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                                </svg>
+                                <span style={{ fontFamily:'Inter,sans-serif', fontSize:11, color:'var(--ec-text-muted)' }}>Добавить</span>
+                              </label>
+                            )}
+                          </div>
+                        )}
+                        <input id="works-upload" className="profile-avatar-input" type="file"
+                          accept="image/*" multiple onChange={onWorksChange} />
+                      </div>
+                    </section>
+
+                    <button type="button" className="profile-btn profile-btn--action"
+                      onClick={saveExecutorAndCabinet} disabled={isExecutorSaving}>
+                      {isExecutorSaving ? 'Сохранение...' : 'Сохранить профиль и кабинет'}
                     </button>
                   </div>
-                </>
+                </div>
               )}
             </section>
           )}
 
-{activeTab === 'about' && (
+          {/* ===== ВКЛАДКА: ОБО МНЕ ===== */}
+          {activeTab === 'about' && (
             <div className="profile-body">
               <aside className="profile-side">
                 <div className="profile-avatar-card">
@@ -1218,15 +1297,13 @@ const Profile = () => {
                       />
                     </div>
                   </div>
+                  {message && (
+                    <p className={`profile-message ${isError ? 'profile-message--error' : 'profile-message--ok'}`}>
+                      {message}
+                    </p>
+                  )}
+                </form>
 
-                {message && (
-                  <p className={`profile-message ${isError ? 'profile-message--error' : 'profile-message--ok'}`}>
-                    {message}
-                  </p>
-                )}
-              </form>
-
-                <div className="profile-section-divider" />
 
                 <h2>Смена пароля</h2>
                 <form onSubmit={onChangePassword} className="profile-table">
@@ -1256,22 +1333,17 @@ const Profile = () => {
                       />
                     </div>
                   </div>
-
                   {passwordMessage && (
-                    <p
-                      className={`profile-message ${
-                        isPasswordError ? 'profile-message--error' : 'profile-message--ok'
-                      }`}
-                    >
+                    <p className={`profile-message ${isPasswordError ? 'profile-message--error' : 'profile-message--ok'}`}>
                       {passwordMessage}
                     </p>
                   )}
-
                   <button type="submit" className="profile-btn profile-btn--primary" disabled={isPasswordLoading}>
                     {isPasswordLoading ? 'Сохранение...' : 'Обновить пароль'}
                   </button>
                 </form>
-                <div className="profile-section-divider" />
+
+
                 <div className="profile-reviews">
                   <div className="orders-header">
                     <div>
@@ -1279,9 +1351,7 @@ const Profile = () => {
                       <p>Отзывы пользователей о вашей работе.</p>
                     </div>
                   </div>
-
                   {reviewsMessage && <p className="orders-message">{reviewsMessage}</p>}
-
                   {isReviewsLoading ? (
                     <p className="orders-empty">Загрузка отзывов...</p>
                   ) : profileReviews.length === 0 ? (
@@ -1291,7 +1361,7 @@ const Profile = () => {
                       {profileReviews.map((review) => (
                         <div key={review.id} className="review-item">
                           <div className="review-item__head">
-                            <span className="review-item__name">{review.reviewer_name || "Пользователь"}</span>
+                            <span className="review-item__name">{review.reviewer_name || 'Пользователь'}</span>
                             <span className="review-item__rating">Оценка: {review.rating}/5</span>
                           </div>
                           <p className="review-item__text">{review.text}</p>
@@ -1304,10 +1374,10 @@ const Profile = () => {
                   )}
                 </div>
               </section>
-
             </div>
           )}
 
+          {/* ===== ВКЛАДКА: МОИ ЗАКАЗЫ ===== */}
           {activeTab === 'orders' && (
             <section className="profile-card profile-card--orders">
               <div className="orders-header">
@@ -1323,7 +1393,6 @@ const Profile = () => {
                       window.alert('Для создания заказа зарегистрируйтесь!');
                       return;
                     }
-
                     setIsOrderModalOpen(true);
                     setOrderErrors({});
                   }}
@@ -1348,9 +1417,7 @@ const Profile = () => {
                           <p>Срок: {order.deadline}</p>
                           <p>Номер заказа: #{order.id}</p>
                         </div>
-                        <span
-                          className={`orders-status orders-status--${statusClassMap[order.status] || 'pending'}`}
-                        >
+                        <span className={`orders-status orders-status--${statusClassMap[order.status] || 'pending'}`}>
                           {order.status}
                         </span>
                       </div>
@@ -1359,6 +1426,7 @@ const Profile = () => {
                         <span>Бюджет: {Number(order.budget).toLocaleString()} тг</span>
                         {order.file_name && <span>Файл: {order.file_name}</span>}
                       </div>
+
                       {order.status === 'Готов' ? (
                         <div className="orders-item__responses">
                           <div className="orders-item__actions">
@@ -1371,28 +1439,23 @@ const Profile = () => {
                             >
                               Открыть файл
                             </button>
-                            {order.status === 'Ожидает' && (
-                              <button
-                                type="button"
-                                className="orders-view-btn orders-view-btn--danger"
-                                onClick={() => deleteOrder(order.id)}
-                              >
-                                Удалить
-                              </button>
-                            )}
                           </div>
                         </div>
                       ) : order.status === 'Изготовка изделия' ? (
                         <div className="orders-item__responses">
                           <span>Статус: Изготовка изделия</span>
-
                           <span>
-                            Изготовляет: {order.accepted_executor_user_id ? (
-                              <button type="button" className="profile-link-btn" onClick={() => openUserProfile(order.accepted_executor_user_id)}>
-                                {getOrderExecutorLabel(order) || "Исполнитель"}
+                            Изготовляет:{' '}
+                            {order.accepted_executor_user_id ? (
+                              <button
+                                type="button"
+                                className="profile-link-btn"
+                                onClick={() => openUserProfile(order.accepted_executor_user_id)}
+                              >
+                                {getOrderExecutorLabel(order) || 'Исполнитель'}
                               </button>
                             ) : (
-                              getOrderExecutorLabel(order) || "Исполнитель не указан"
+                              getOrderExecutorLabel(order) || 'Исполнитель не указан'
                             )}
                           </span>
                           <div className="orders-item__actions">
@@ -1412,15 +1475,6 @@ const Profile = () => {
                             >
                               Открыть файл
                             </button>
-                            {order.status === 'Ожидает' && (
-                              <button
-                                type="button"
-                                className="orders-view-btn orders-view-btn--danger"
-                                onClick={() => deleteOrder(order.id)}
-                              >
-                                Удалить
-                              </button>
-                            )}
                           </div>
                         </div>
                       ) : (
@@ -1462,7 +1516,8 @@ const Profile = () => {
             </section>
           )}
 
-{activeTab === 'market' && executor && (
+          {/* ===== ВКЛАДКА: НАЙТИ ЗАКАЗ ===== */}
+          {activeTab === 'market' && executor && (
             <section className="profile-card profile-card--orders">
               <div className="orders-header">
                 <div>
@@ -1486,9 +1541,7 @@ const Profile = () => {
                           <h3>{order.service}</h3>
                           <p>Срок: {order.deadline}</p>
                         </div>
-                        <span
-                          className={`orders-status orders-status--${statusClassMap[order.status] || 'pending'}`}
-                        >
+                        <span className={`orders-status orders-status--${statusClassMap[order.status] || 'pending'}`}>
                           {order.status}
                         </span>
                       </div>
@@ -1527,7 +1580,8 @@ const Profile = () => {
             </section>
           )}
 
-{activeTab === 'chats' && (
+          {/* ===== ВКЛАДКА: ЧАТЫ ===== */}
+          {activeTab === 'chats' && (
             <section className="profile-card profile-card--orders">
               <div className="orders-header">
                 <div>
@@ -1574,42 +1628,49 @@ const Profile = () => {
                             key={`${thread.order_id}-${thread.peer_id}`}
                             className={`orders-item ${isActiveThread ? 'orders-item--active' : ''}`}
                           >
-                          <div className="orders-item__head">
-                            <div>
-                              <h3>{thread.order_service}</h3>
-                              <p>Собеседник: <button type="button" className="profile-link-btn" onClick={() => openUserProfile(thread.peer_id)}>{thread.peer_name}</button></p>
+                            <div className="orders-item__head">
+                              <div>
+                                <h3>{thread.order_service}</h3>
+                                <p>
+                                  Собеседник:{' '}
+                                  <button
+                                    type="button"
+                                    className="profile-link-btn"
+                                    onClick={() => openUserProfile(thread.peer_id)}
+                                  >
+                                    {thread.peer_name}
+                                  </button>
+                                </p>
+                              </div>
+                              <span className={`orders-status orders-status--${statusClassMap[thread.order_status] || 'pending'}`}>
+                                {thread.order_status}
+                              </span>
                             </div>
-                            <span
-                              className={`orders-status orders-status--${statusClassMap[thread.order_status] || 'pending'}`}
-                            >
-                              {thread.order_status}
-                            </span>
-                          </div>
-                          <p className="orders-item__details">{thread.last_message}</p>
-                          <p className="orders-item__details">Номер заказа: #{thread.order_id}</p>
-                          <div className="orders-item__footer">
-                            <span>{new Date(thread.last_time).toLocaleString()}</span>
-                            {isChatLockedForUser(thread.order_user_id, thread.accepted_executor_user_id) ? (
-                              <p className="orders-message">Заказчик выбрал другого исполнителя</p>
-                            ) : (
-                              <button
-                                type="button"
-                                className={`orders-view-btn ${isActiveThread ? 'orders-view-btn--selected' : ''}`}
-                                onClick={() =>
-                                  openChatWithResponder(
-                                    thread.order_id,
-                                    thread.peer_id,
-                                    thread.peer_name,
-                                    thread.order_status,
-                                    thread.order_user_id,
-                                    thread.accepted_executor_user_id,
-                                  )
-                                }
-                              >
-                                Открыть чат
-                              </button>
-                            )}
-                          </div>
+                            <p className="orders-item__details">{thread.last_message}</p>
+                            <p className="orders-item__details">Номер заказа: #{thread.order_id}</p>
+                            <div className="orders-item__footer">
+                              <span>{new Date(thread.last_time).toLocaleString()}</span>
+                              {isChatLockedForUser(thread.order_user_id, thread.accepted_executor_user_id) ? (
+                                <p className="orders-message">Заказчик выбрал другого исполнителя</p>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className={`orders-view-btn ${isActiveThread ? 'orders-view-btn--selected' : ''}`}
+                                  onClick={() =>
+                                    openChatWithResponder(
+                                      thread.order_id,
+                                      thread.peer_id,
+                                      thread.peer_name,
+                                      thread.order_status,
+                                      thread.order_user_id,
+                                      thread.accepted_executor_user_id,
+                                    )
+                                  }
+                                >
+                                  Открыть чат
+                                </button>
+                              )}
+                            </div>
                           </article>
                         );
                       })
@@ -1622,17 +1683,25 @@ const Profile = () => {
                     <>
                       <div className="chat-panel__header">
                         <div>
-                          <h3>Чат: <button type="button" className="profile-link-btn" onClick={() => openUserProfile(activeChat.peerId)}>{activeChat.peerName}</button></h3>
+                          <h3>
+                            Чат:{' '}
+                            <button
+                              type="button"
+                              className="profile-link-btn"
+                              onClick={() => openUserProfile(activeChat.peerId)}
+                            >
+                              {activeChat.peerName}
+                            </button>
+                          </h3>
                           <p className="orders-item__details">Номер заказа: #{activeChat.orderId}</p>
-                          
                         </div>
-
                       </div>
 
                       {chatError && <p className="orders-message">{chatError}</p>}
                       {isChatLockedForUser(activeChat.orderUserId, activeChat.acceptedExecutorUserId) && (
                         <p className="orders-message">Заказчик выбрал другого исполнителя</p>
                       )}
+
                       <div className="chat-layout">
                         <div className="chat-main">
                           <div className="chat-body" ref={chatBodyRef}>
@@ -1711,7 +1780,6 @@ const Profile = () => {
                             </>
                           )}
                         </div>
-                        
                       </div>
                     </>
                   ) : (
@@ -1723,6 +1791,7 @@ const Profile = () => {
               </div>
             </section>
           )}
+
           {activeTab === 'about' && (
             <div className="profile-footer">
               <button type="button" className="profile-btn profile-btn--logout" onClick={handleLogout}>
@@ -1741,6 +1810,7 @@ const Profile = () => {
         </section>
       </main>
 
+      {/* ===== МОДАЛ: ОТКЛИКИ ===== */}
       {responsesModal.open && (
         <div
           className="order-modal"
@@ -1770,37 +1840,38 @@ const Profile = () => {
                   <div key={responder.id} className="responses-item">
                     <div>
                       <p className="responses-name">
-                        {responder.user_name || 'Исполнитель'} ({responder.executor_type === 'organization' ? 'Организация' : 'Частный'})
+                        {responder.user_name || 'Исполнитель'}{' '}
+                        ({responder.executor_type === 'organization' ? 'Организация' : 'Частный'})
                       </p>
                       <p className="responses-meta">
                         {responder.first_name} {responder.last_name} · {responder.phone}
                       </p>
                     </div>
                     <div className="orders-item__actions">
-                        <button
-                          type="button"
-                          className="orders-view-btn"
-                          onClick={() =>
-                            openChatWithResponder(
-                              responsesModal.orderId,
-                              responder.executor_user_id,
-                              responder.user_name,
-                              responsesModal.orderStatus,
-                              user?.id,
-                              null,
-                            )
-                          }
-                        >
-                          Открыть чат
-                        </button>
-                        <button
-                          type="button"
-                          className="orders-view-btn"
-                          onClick={() => acceptExecutorForOrder(responsesModal.orderId, responder.executor_user_id)}
-                        >
-                          {'Принять исполнителя'}
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        className="orders-view-btn"
+                        onClick={() =>
+                          openChatWithResponder(
+                            responsesModal.orderId,
+                            responder.executor_user_id,
+                            responder.user_name,
+                            responsesModal.orderStatus,
+                            user?.id,
+                            null,
+                          )
+                        }
+                      >
+                        Открыть чат
+                      </button>
+                      <button
+                        type="button"
+                        className="orders-view-btn"
+                        onClick={() => acceptExecutorForOrder(responsesModal.orderId, responder.executor_user_id)}
+                      >
+                        Принять исполнителя
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1809,16 +1880,24 @@ const Profile = () => {
         </div>
       )}
 
+      {/* ===== МОДАЛ: ЧАТ (вне вкладки чатов) ===== */}
       {activeChat && activeTab !== 'chats' && (
         <div className="order-modal" onClick={() => setActiveChat(null)}>
           <div className="order-modal__card" onClick={(event) => event.stopPropagation()}>
             <div className="order-modal__header">
-              <h2>Чат: <button type="button" className="profile-link-btn" onClick={() => openUserProfile(activeChat.peerId)}>{activeChat.peerName}</button></h2>
+              <h2>
+                Чат:{' '}
+                <button
+                  type="button"
+                  className="profile-link-btn"
+                  onClick={() => openUserProfile(activeChat.peerId)}
+                >
+                  {activeChat.peerName}
+                </button>
+              </h2>
               <p className="orders-item__details">Номер заказа: #{activeChat.orderId}</p>
               {activeChat.orderStatus && (
-                <span className="chat-status">
-                  Статус заказа: {activeChat.orderStatus}
-                </span>
+                <span className="chat-status">Статус заказа: {activeChat.orderStatus}</span>
               )}
               <button type="button" className="order-modal__close" onClick={() => setActiveChat(null)}>
                 ×
@@ -1829,9 +1908,10 @@ const Profile = () => {
             {isChatLockedForUser(activeChat.orderUserId, activeChat.acceptedExecutorUserId) && (
               <p className="orders-message">Заказчик выбрал другого исполнителя</p>
             )}
+
             <div className="chat-layout">
               <div className="chat-main">
-                  <div className="chat-body" ref={chatBodyModalRef}>
+                <div className="chat-body" ref={chatBodyModalRef}>
                   {isChatLoading ? (
                     <p className="orders-empty">Загрузка сообщений...</p>
                   ) : chatMessages.length === 0 ? (
@@ -1913,9 +1993,7 @@ const Profile = () => {
                   {['Ожидает', 'Изготовка изделия', 'Готов'].map((status) => (
                     <li
                       key={status}
-                      className={`chat-status-item ${
-                        activeChat.orderStatus === status ? 'chat-status-item--active' : ''
-                      }`}
+                      className={`chat-status-item ${activeChat.orderStatus === status ? 'chat-status-item--active' : ''}`}
                     >
                       {status}
                     </li>
@@ -1927,12 +2005,16 @@ const Profile = () => {
         </div>
       )}
 
+      {/* ===== МОДАЛ: ПРЕДПРОСМОТР ФАЙЛА ===== */}
       {previewFile.open && (
         <div
           className={`order-modal ${previewFile.data.startsWith('data:image') ? 'order-modal--fullscreen' : ''}`}
           onClick={() => setPreviewFile({ open: false, name: '', data: '' })}
         >
-          <div className="order-modal__card order-modal__card--preview" onClick={(event) => event.stopPropagation()}>
+          <div
+            className="order-modal__card order-modal__card--preview"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="order-modal__header">
               <h2>{previewFile.name || 'Файл'}</h2>
               <button
@@ -1961,6 +2043,7 @@ const Profile = () => {
         </div>
       )}
 
+      {/* ===== МОДАЛ: НОВЫЙ ЗАКАЗ ===== */}
       {isOrderModalOpen && (
         <div className="order-modal" onClick={() => setIsOrderModalOpen(false)}>
           <div className="order-modal__card" onClick={(event) => event.stopPropagation()}>
@@ -1995,7 +2078,7 @@ const Profile = () => {
               </label>
 
               <label className="order-form__field">
-                <span>Рассказать о модели и подобностях, которые стоит знать</span>
+                <span>Рассказать о модели и подробностях, которые стоит знать</span>
                 <textarea
                   rows="4"
                   placeholder="Опишите материал, размеры, цвет, требования к качеству и т.д."
