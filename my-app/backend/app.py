@@ -18,7 +18,6 @@ DB_USER = os.getenv('DB_USER', 'postgres')
 DB_PASSWORD = os.getenv('DB_PASSWORD', '123')
 DB_NAME = os.getenv('DB_NAME', '3d_printing')
 
-
 def get_connection():
     return psycopg2.connect(
         host=DB_HOST,
@@ -28,7 +27,6 @@ def get_connection():
         dbname=DB_NAME,
         connect_timeout=5,
     )
-
 
 def ensure_users_table():
     sql = '''
@@ -47,7 +45,6 @@ def ensure_users_table():
             cur.execute(sql)
             cur.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;')
         conn.commit()
-
 
 def ensure_executors_table():
     sql = '''
@@ -68,7 +65,6 @@ def ensure_executors_table():
         with conn.cursor() as cur:
             cur.execute(sql)
         conn.commit()
-
 
 def ensure_orders_table():
     sql = '''
@@ -93,6 +89,8 @@ def ensure_orders_table():
             cur.execute(sql)
             cur.execute('ALTER TABLE orders ADD COLUMN IF NOT EXISTS file_data TEXT;')
             cur.execute('ALTER TABLE orders ADD COLUMN IF NOT EXISTS accepted_executor_user_id INTEGER REFERENCES users(id);')
+            cur.execute('ALTER TABLE orders ADD COLUMN IF NOT EXISTS direct_executor_user_id INTEGER REFERENCES users(id);')
+            cur.execute('ALTER TABLE orders ADD COLUMN IF NOT EXISTS decline_reason TEXT;')
             cur.execute(
                 '''
                 DO $$
@@ -107,11 +105,12 @@ def ensure_orders_table():
                 '''
                 ALTER TABLE orders
                 ADD CONSTRAINT orders_status_check
-                CHECK (status IN ('Ожидает', 'Выполняется', 'Изготовка изделия', 'Готов'));
+                CHECK (status IN (
+                    'Ожидает', 'Выполняется', 'Изготовка изделия', 'Готов', 'Отказано'
+                ));
                 '''
             )
         conn.commit()
-
 
 def ensure_order_responses_table():
     sql = '''
@@ -129,7 +128,6 @@ def ensure_order_responses_table():
             cur.execute(sql)
         conn.commit()
 
-
 def ensure_chat_messages_table():
     sql = '''
     CREATE TABLE IF NOT EXISTS chat_messages (
@@ -140,6 +138,7 @@ def ensure_chat_messages_table():
         content TEXT,
         file_name TEXT,
         file_data TEXT,
+        is_read BOOLEAN NOT NULL DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT NOW()
     );
     '''
@@ -150,8 +149,30 @@ def ensure_chat_messages_table():
             cur.execute('ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS file_name TEXT;')
             cur.execute('ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS file_data TEXT;')
             cur.execute('ALTER TABLE chat_messages ALTER COLUMN content DROP NOT NULL;')
+            cur.execute('ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN NOT NULL DEFAULT FALSE;')
+            cur.execute('''
+                DO $$
+                DECLARE
+                    fk_name TEXT;
+                BEGIN
+                    SELECT conname INTO fk_name
+                    FROM pg_constraint
+                    WHERE conrelid = 'chat_messages'::regclass
+                      AND contype = 'f'
+                      AND conkey = ARRAY(
+                          SELECT attnum FROM pg_attribute
+                          WHERE attrelid = 'chat_messages'::regclass AND attname = 'order_id'
+                      );
+                    IF fk_name IS NOT NULL THEN
+                        EXECUTE 'ALTER TABLE chat_messages DROP CONSTRAINT ' || fk_name;
+                    END IF;
+                    ALTER TABLE chat_messages
+                        ADD CONSTRAINT chat_messages_order_id_fkey
+                        FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE;
+                EXCEPTION WHEN duplicate_object THEN NULL;
+                END $$;
+            ''')
         conn.commit()
-
 
 def ensure_reviews_table():
     sql = '''
@@ -171,8 +192,6 @@ def ensure_reviews_table():
             cur.execute(sql)
         conn.commit()
 
-
-
 def ensure_executor_cabinet_table():
     sql = '''
     CREATE TABLE IF NOT EXISTS executor_cabinets (
@@ -182,6 +201,7 @@ def ensure_executor_cabinet_table():
         services TEXT,
         company_avatar TEXT,
         works TEXT,
+        price_range TEXT,
         updated_at TIMESTAMP DEFAULT NOW()
     );
     '''
@@ -189,8 +209,8 @@ def ensure_executor_cabinet_table():
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(sql)
+            cur.execute('ALTER TABLE executor_cabinets ADD COLUMN IF NOT EXISTS price_range TEXT;')
         conn.commit()
-
 
 @app.get('/api/health')
 def health():
@@ -202,7 +222,6 @@ def health():
         return jsonify({'ok': True, 'dbTime': row['now']}), 200
     except Exception as error:
         return jsonify({'ok': False, 'error': f'Database connection failed: {str(error)}'}), 500
-
 
 @app.post('/api/register')
 def register():
@@ -240,7 +259,6 @@ def register():
     except Exception as error:
         return jsonify({'message': f'Registration failed: {str(error)}'}), 500
 
-
 @app.post('/api/login')
 def login():
     payload = request.get_json(silent=True) or {}
@@ -277,7 +295,6 @@ def login():
         ), 200
     except Exception as error:
         return jsonify({'message': f'Login failed: {str(error)}'}), 500
-
 
 @app.get('/api/users/<int:user_id>')
 def get_user(user_id):
@@ -323,7 +340,6 @@ def get_user(user_id):
     except Exception as error:
         return jsonify({'message': f'Get user failed: {str(error)}'}), 500
 
-
 @app.patch('/api/users/<int:user_id>')
 def update_user(user_id):
     payload = request.get_json(silent=True) or {}
@@ -358,7 +374,6 @@ def update_user(user_id):
         return jsonify({'message': 'Email already exists'}), 409
     except Exception as error:
         return jsonify({'message': f'Update user failed: {str(error)}'}), 500
-
 
 @app.post('/api/users/<int:user_id>/password')
 def update_password(user_id):
@@ -398,6 +413,85 @@ def update_password(user_id):
     except Exception as error:
         return jsonify({'message': f'Password update failed: {str(error)}'}), 500
 
+@app.get('/api/executors/list')
+def list_executors():
+    services     = request.args.getlist('service')
+    price_from   = request.args.get('priceFrom', '').strip()
+    price_to     = request.args.get('priceTo', '').strip()
+    executor_type = request.args.get('executorType', '').strip()
+    exclude_user_id = request.args.get('excludeUserId', '').strip()
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    '''
+                    SELECT
+                        e.user_id,
+                        u.name,
+                        e.executor_type,
+                        e.first_name,
+                        e.last_name,
+                        e.organization_name,
+                        ec.about,
+                        ec.services,
+                        ec.company_avatar,
+                        ec.price_range,
+                        ec.works
+                    FROM executors e
+                    JOIN users u ON u.id = e.user_id
+                    LEFT JOIN executor_cabinets ec ON ec.user_id = e.user_id
+                    ORDER BY e.created_at DESC
+                    '''
+                )
+                rows = cur.fetchall()
+
+        result = []
+        for row in rows:
+
+            if exclude_user_id.isdigit() and int(row['user_id']) == int(exclude_user_id):
+                continue
+
+            executor_services = json.loads(row['services']) if row.get('services') else []
+
+            executor_service_names = [
+                s if isinstance(s, str) else s.get('name', '')
+                for s in executor_services
+            ]
+
+            if services and not any(s in executor_service_names for s in services):
+                continue
+
+            if executor_type and row['executor_type'] != executor_type:
+                continue
+
+            price_range = row.get('price_range') or ''
+            if price_range and (price_from or price_to):
+                parts = price_range.split('-')
+                exec_from = int(parts[0]) if parts[0].isdigit() else 0
+                exec_to   = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else exec_from
+                if price_from and exec_to < int(price_from):
+                    continue
+                if price_to and exec_from > int(price_to):
+                    continue
+
+            result.append({
+                'user_id':           row['user_id'],
+                'name':              row['name'],
+                'executor_type':     row['executor_type'],
+                'first_name':        row['first_name'],
+                'last_name':         row['last_name'],
+                'organization_name': row.get('organization_name') or '',
+                'about':             row.get('about') or '',
+                'services':          executor_services,
+                'company_avatar':    row.get('company_avatar') or '',
+                'price_range':       price_range,
+                'works':             json.loads(row['works']) if row.get('works') else [],
+            })
+
+        return jsonify({'executors': result}), 200
+    except Exception as error:
+        return jsonify({'message': f'List executors failed: {str(error)}'}), 500
 
 @app.get('/api/executors/status')
 def executor_status():
@@ -423,7 +517,6 @@ def executor_status():
         return jsonify({'isExecutor': executor is not None, 'executor': executor}), 200
     except Exception as error:
         return jsonify({'message': f'Executor status failed: {str(error)}'}), 500
-
 
 @app.post('/api/executors')
 def create_executor():
@@ -496,7 +589,6 @@ def create_executor():
     except Exception as error:
         return jsonify({'message': f'Executor creation failed: {str(error)}'}), 500
 
-
 @app.put('/api/executors')
 def update_executor():
     payload = request.get_json(silent=True) or {}
@@ -559,6 +651,53 @@ def update_executor():
     except Exception as error:
         return jsonify({'message': f'Executor update failed: {str(error)}'}), 500
 
+@app.get('/api/orders/executor')
+def list_executor_orders():
+    """... ..., ... ... ... ... ... ...."""
+    user_id = request.args.get('userId', '').strip()
+
+    if not user_id.isdigit():
+        return jsonify({'message': 'userId is required'}), 400
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    '''
+                    SELECT DISTINCT
+                        o.id, o.user_id, o.service, o.details, o.budget, o.deadline,
+                        o.file_name, o.file_data, o.status, o.accepted_executor_user_id,
+                        o.direct_executor_user_id, o.created_at,
+                        cu.name AS customer_name,
+                        e.executor_type AS accepted_executor_type,
+                        e.first_name AS accepted_executor_first_name,
+                        e.last_name AS accepted_executor_last_name,
+                        e.organization_name AS accepted_executor_org_name,
+                        CASE WHEN o.accepted_executor_user_id = %s THEN true ELSE false END AS is_accepted
+                    FROM orders o
+                    JOIN users cu ON cu.id = o.user_id
+                    LEFT JOIN executors e ON e.user_id = o.accepted_executor_user_id
+                    WHERE (
+                        EXISTS (
+                            SELECT 1 FROM order_responses r
+                            WHERE r.order_id = o.id AND r.executor_user_id = %s
+                        )
+                        OR o.accepted_executor_user_id = %s
+                    )
+                    AND o.user_id <> %s
+                    AND (
+                        o.accepted_executor_user_id IS NULL
+                        OR o.accepted_executor_user_id = %s
+                    )
+                    ORDER BY o.created_at DESC
+                    ''',
+                    (int(user_id), int(user_id), int(user_id), int(user_id), int(user_id)),
+                )
+                orders = cur.fetchall()
+
+        return jsonify({'orders': orders}), 200
+    except Exception as error:
+        return jsonify({'message': f'List executor orders failed: {str(error)}'}), 500
 
 @app.get('/api/orders')
 def list_orders():
@@ -573,15 +712,17 @@ def list_orders():
                 cur.execute(
                     '''
                     SELECT o.id, o.user_id, o.service, o.details, o.budget, o.deadline, o.file_name, o.file_data,
-                           o.status, o.accepted_executor_user_id, o.created_at,
+                           o.status, o.accepted_executor_user_id, o.direct_executor_user_id, o.decline_reason, o.created_at,
                            u.name AS accepted_executor_name,
                            e.executor_type AS accepted_executor_type,
                            e.first_name AS accepted_executor_first_name,
                            e.last_name AS accepted_executor_last_name,
-                           e.organization_name AS accepted_executor_org_name
+                           e.organization_name AS accepted_executor_org_name,
+                           du.name AS direct_executor_name
                     FROM orders o
                     LEFT JOIN users u ON u.id = o.accepted_executor_user_id
                     LEFT JOIN executors e ON e.user_id = o.accepted_executor_user_id
+                    LEFT JOIN users du ON du.id = o.direct_executor_user_id
                     WHERE o.user_id = %s
                     ORDER BY o.created_at DESC
                     ''',
@@ -593,42 +734,79 @@ def list_orders():
     except Exception as error:
         return jsonify({'message': f'List orders failed: {str(error)}'}), 500
 
-
 @app.get('/api/orders/all')
 def list_all_orders():
     exclude_user_id = request.args.get('excludeUserId', '').strip()
+    executor_user_id = request.args.get('executorUserId', '').strip()
+
+    hidden_statuses = (
+        'Изготовка изделия',
+        'Готов',
+        'Отказано',
+    )
+
     try:
+        executor_services = []
+
+        if executor_user_id.isdigit():
+            try:
+                with get_connection() as conn:
+                    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                        cur.execute(
+                            'SELECT services FROM executor_cabinets WHERE user_id = %s',
+                            (int(executor_user_id),),
+                        )
+                        row = cur.fetchone()
+                        if row and row.get('services'):
+                            raw = json.loads(row['services'])
+                            executor_services = [
+                                s if isinstance(s, str) else s.get('name', '')
+                                for s in raw
+                                if (s if isinstance(s, str) else s.get('name', ''))
+                            ]
+            except Exception:
+                executor_services = []
+
         with get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 if exclude_user_id.isdigit():
                     cur.execute(
                         '''
                         SELECT o.id, o.user_id, u.name AS user_name, o.service, o.details, o.budget,
-                               o.deadline, o.file_name, o.file_data, o.status, o.accepted_executor_user_id, o.created_at
+                               o.deadline, o.file_name, o.file_data, o.status, o.accepted_executor_user_id, o.created_at,
+                               EXISTS (
+                                   SELECT 1 FROM order_responses r
+                                   WHERE r.order_id = o.id AND r.executor_user_id = %s
+                               ) AS has_responded
                         FROM orders o
                         JOIN users u ON u.id = o.user_id
-                        WHERE o.user_id <> %s AND o.status NOT IN ('Изготовка изделия', 'Готов')
+                        WHERE o.user_id <> %s
+                          AND o.status NOT IN %s
                         ORDER BY o.created_at DESC
                         ''',
-                        (int(exclude_user_id),),
+                        (int(exclude_user_id), int(exclude_user_id), hidden_statuses),
                     )
                 else:
                     cur.execute(
                         '''
                         SELECT o.id, o.user_id, u.name AS user_name, o.service, o.details, o.budget,
-                               o.deadline, o.file_name, o.file_data, o.status, o.accepted_executor_user_id, o.created_at
+                               o.deadline, o.file_name, o.file_data, o.status, o.accepted_executor_user_id, o.created_at,
+                               FALSE AS has_responded
                         FROM orders o
                         JOIN users u ON u.id = o.user_id
-                        WHERE o.status NOT IN ('Изготовка изделия', 'Готов')
+                        WHERE o.status NOT IN %s
                         ORDER BY o.created_at DESC
-                        '''
+                        ''',
+                        (hidden_statuses,),
                     )
                 orders = cur.fetchall()
+
+        if executor_services:
+            orders = [o for o in orders if o.get('service') in executor_services]
 
         return jsonify({'orders': orders}), 200
     except Exception as error:
         return jsonify({'message': f'List all orders failed: {str(error)}'}), 500
-
 
 @app.post('/api/orders/respond')
 def respond_to_order():
@@ -655,7 +833,7 @@ def respond_to_order():
                     return jsonify({'message': 'Order not found'}), 404
 
                 if int(order['user_id']) == int(user_id):
-                    return jsonify({'message': 'Нельзя откликнуться на свой заказ'}), 400
+                    return jsonify({'message': '... ... ... ... ...'}), 400
 
                 cur.execute('SELECT id FROM executors WHERE user_id = %s', (int(user_id),))
                 executor = cur.fetchone()
@@ -678,7 +856,6 @@ def respond_to_order():
         return jsonify({'response': response_row, 'ok': True}), 201
     except Exception as error:
         return jsonify({'message': f'Respond to order failed: {str(error)}'}), 500
-
 
 @app.post('/api/orders/accept')
 def accept_order_executor():
@@ -736,7 +913,6 @@ def accept_order_executor():
     except Exception as error:
         return jsonify({'message': f'Accept order failed: {str(error)}'}), 500
 
-
 @app.post('/api/orders/complete')
 def complete_order():
     payload = request.get_json(silent=True) or {}
@@ -777,7 +953,6 @@ def complete_order():
     except Exception as error:
         return jsonify({'message': f'Complete order failed: {str(error)}'}), 500
 
-
 @app.delete('/api/orders/<int:order_id>')
 def delete_order(order_id):
     payload = request.get_json(silent=True) or {}
@@ -789,7 +964,7 @@ def delete_order(order_id):
     try:
         with get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute('SELECT id, user_id FROM orders WHERE id = %s', (int(order_id),))
+                cur.execute('SELECT id, user_id, status FROM orders WHERE id = %s', (int(order_id),))
                 order = cur.fetchone()
 
                 if order is None:
@@ -801,6 +976,8 @@ def delete_order(order_id):
                 if order.get('status') != 'Ожидает':
                     return jsonify({'message': 'Only pending orders can be deleted'}), 400
 
+                cur.execute('DELETE FROM chat_messages WHERE order_id = %s', (int(order_id),))
+                cur.execute('DELETE FROM order_responses WHERE order_id = %s', (int(order_id),))
                 cur.execute('DELETE FROM orders WHERE id = %s', (int(order_id),))
             conn.commit()
 
@@ -808,6 +985,43 @@ def delete_order(order_id):
     except Exception as error:
         return jsonify({'message': f'Delete order failed: {str(error)}'}), 500
 
+@app.post('/api/orders/<int:order_id>/decline')
+def decline_order(order_id):
+    """... ... ... ... ... ... ... ... ... ...."""
+    payload = request.get_json(silent=True) or {}
+    executor_user_id = payload.get('executorUserId')
+    reason = (payload.get('reason') or '').strip()
+
+    if executor_user_id is None:
+        return jsonify({'message': 'executorUserId is required'}), 400
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    'SELECT id, user_id, direct_executor_user_id, status FROM orders WHERE id = %s',
+                    (int(order_id),),
+                )
+                order = cur.fetchone()
+
+                if not order:
+                    return jsonify({'message': 'Order not found'}), 404
+
+                if int(order.get('direct_executor_user_id') or 0) != int(executor_user_id):
+                    return jsonify({'message': 'Not allowed'}), 403
+
+                if order['status'] != 'Ожидает':
+                    return jsonify({'message': 'Only pending orders can be declined'}), 400
+
+                cur.execute(
+                    "UPDATE orders SET status = 'Отказано', decline_reason = %s WHERE id = %s",
+                    (reason or None, int(order_id)),
+                )
+            conn.commit()
+
+        return jsonify({'ok': True}), 200
+    except Exception as error:
+        return jsonify({'message': f'Decline order failed: {str(error)}'}), 500
 
 @app.get('/api/orders/responses')
 def list_order_responses():
@@ -837,7 +1051,6 @@ def list_order_responses():
     except Exception as error:
         return jsonify({'message': f'List order responses failed: {str(error)}'}), 500
 
-
 @app.get('/api/orders/responses/counts')
 def list_order_response_counts():
     user_id = request.args.get('userId', '').strip()
@@ -863,7 +1076,6 @@ def list_order_response_counts():
         return jsonify({'counts': rows}), 200
     except Exception as error:
         return jsonify({'message': f'List response counts failed: {str(error)}'}), 500
-
 
 @app.get('/api/reviews')
 def list_reviews():
@@ -891,7 +1103,6 @@ def list_reviews():
         return jsonify({'reviews': reviews}), 200
     except Exception as error:
         return jsonify({'message': f'List reviews failed: {str(error)}'}), 500
-
 
 @app.post('/api/reviews')
 def create_review():
@@ -953,7 +1164,6 @@ def create_review():
     except Exception as error:
         return jsonify({'message': f'Create review failed: {str(error)}'}), 500
 
-
 @app.get('/api/executors/cabinet')
 def get_executor_cabinet():
     user_id = request.args.get('userId', '').strip()
@@ -966,7 +1176,7 @@ def get_executor_cabinet():
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     '''
-                    SELECT user_id, about, services, company_avatar, works, updated_at
+                    SELECT user_id, about, services, company_avatar, works, price_range, updated_at
                     FROM executor_cabinets
                     WHERE user_id = %s
                     ''',
@@ -983,13 +1193,13 @@ def get_executor_cabinet():
             'services': json.loads(row['services']) if row.get('services') else [],
             'companyAvatar': row.get('company_avatar') or '',
             'works': json.loads(row['works']) if row.get('works') else [],
+            'priceRange': row.get('price_range') or '',
             'updated_at': row.get('updated_at'),
         }
 
         return jsonify({'cabinet': cabinet}), 200
     except Exception as error:
         return jsonify({'message': f'Get cabinet failed: {str(error)}'}), 500
-
 
 @app.put('/api/executors/cabinet')
 def upsert_executor_cabinet():
@@ -999,6 +1209,7 @@ def upsert_executor_cabinet():
     services = payload.get('services') or []
     company_avatar = (payload.get('companyAvatar') or '').strip()
     works = payload.get('works') or []
+    price_range = (payload.get('priceRange') or '').strip()
 
     if user_id is None or not str(user_id).isdigit():
         return jsonify({'message': 'userId is required'}), 400
@@ -1019,16 +1230,17 @@ def upsert_executor_cabinet():
 
                 cur.execute(
                     '''
-                    INSERT INTO executor_cabinets (user_id, about, services, company_avatar, works)
-                    VALUES (%s, %s, %s, %s, %s)
+                    INSERT INTO executor_cabinets (user_id, about, services, company_avatar, works, price_range)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     ON CONFLICT (user_id)
                     DO UPDATE SET
                         about = EXCLUDED.about,
                         services = EXCLUDED.services,
                         company_avatar = EXCLUDED.company_avatar,
                         works = EXCLUDED.works,
+                        price_range = EXCLUDED.price_range,
                         updated_at = NOW()
-                    RETURNING user_id, about, services, company_avatar, works, updated_at
+                    RETURNING user_id, about, services, company_avatar, works, price_range, updated_at
                     ''',
                     (
                         int(user_id),
@@ -1036,6 +1248,7 @@ def upsert_executor_cabinet():
                         json.dumps(services, ensure_ascii=False),
                         company_avatar or None,
                         json.dumps(works, ensure_ascii=False),
+                        price_range or None,
                     ),
                 )
                 row = cur.fetchone()
@@ -1047,13 +1260,13 @@ def upsert_executor_cabinet():
             'services': json.loads(row['services']) if row.get('services') else [],
             'companyAvatar': row.get('company_avatar') or '',
             'works': json.loads(row['works']) if row.get('works') else [],
+            'priceRange': row.get('price_range') or '',
             'updated_at': row.get('updated_at'),
         }
 
         return jsonify({'cabinet': cabinet}), 200
     except Exception as error:
         return jsonify({'message': f'Save cabinet failed: {str(error)}'}), 500
-
 
 @app.get('/api/chats/messages')
 def list_chat_messages():
@@ -1075,25 +1288,6 @@ def list_chat_messages():
 
                 cur.execute(
                     '''
-                    SELECT id FROM order_responses
-                    WHERE order_id = %s AND executor_user_id = %s
-                    ''',
-                    (int(order_id), int(user_id)),
-                )
-                response_row = cur.fetchone()
-
-                if int(order['user_id']) != int(user_id) and not response_row:
-                    return jsonify({'message': 'Not allowed'}), 403
-
-                if (
-                    order.get('accepted_executor_user_id') is not None
-                    and int(order['user_id']) != int(user_id)
-                    and int(order['accepted_executor_user_id']) != int(user_id)
-                ):
-                    return jsonify({'message': 'Заказчик выбрал другого исполнителя'}), 403
-
-                cur.execute(
-                    '''
                     SELECT id, order_id, sender_user_id, recipient_user_id, content, file_name, file_data, created_at
                     FROM chat_messages
                     WHERE order_id = %s
@@ -1109,6 +1303,31 @@ def list_chat_messages():
     except Exception as error:
         return jsonify({'message': f'List chat messages failed: {str(error)}'}), 500
 
+@app.post('/api/chats/read')
+def mark_messages_read():
+    """... ... ... ... ... ... ... ... ...."""
+    payload = request.get_json(silent=True) or {}
+    order_id = payload.get('orderId')
+    user_id = payload.get('userId')
+
+    if not order_id or not user_id:
+        return jsonify({'ok': False}), 400
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    '''
+                    UPDATE chat_messages
+                    SET is_read = TRUE
+                    WHERE order_id = %s AND recipient_user_id = %s AND is_read = FALSE
+                    ''',
+                    (int(order_id), int(user_id)),
+                )
+            conn.commit()
+        return jsonify({'ok': True}), 200
+    except Exception as error:
+        return jsonify({'message': f'Mark read failed: {str(error)}'}), 500
 
 @app.post('/api/chats/messages')
 def create_chat_message():
@@ -1161,7 +1380,7 @@ def create_chat_message():
                     and int(order['user_id']) != int(sender_id)
                     and int(order['accepted_executor_user_id']) != int(sender_id)
                 ):
-                    return jsonify({'message': 'Заказчик выбрал другого исполнителя'}), 403
+                    return jsonify({'message': '... ... ... ...'}), 403
 
                 cur.execute(
                     '''
@@ -1177,7 +1396,6 @@ def create_chat_message():
         return jsonify({'message': message}), 201
     except Exception as error:
         return jsonify({'message': f'Create chat message failed: {str(error)}'}), 500
-
 
 @app.get('/api/chats/threads')
 def list_chat_threads():
@@ -1224,14 +1442,18 @@ def list_chat_threads():
                         o.user_id AS order_user_id,
                         o.accepted_executor_user_id AS accepted_executor_user_id,
                         l.last_message,
-                        l.last_time
+                        l.last_time,
+                        (
+                            SELECT COUNT(*)
+                            FROM chat_messages cm
+                            WHERE cm.order_id = l.order_id
+                              AND cm.recipient_user_id = %s
+                              AND cm.sender_user_id = l.peer_id
+                              AND cm.is_read = FALSE
+                        ) AS unread_count
                     FROM latest l
                     JOIN users u ON u.id = l.peer_id
                     JOIN orders o ON o.id = l.order_id
-                    WHERE
-                        o.user_id <> %s
-                        OR o.accepted_executor_user_id IS NULL
-                        OR o.accepted_executor_user_id = l.peer_id
                     ORDER BY l.last_time DESC
                     ''',
                     (int(user_id), int(user_id), int(user_id), int(user_id)),
@@ -1241,7 +1463,6 @@ def list_chat_threads():
         return jsonify({'threads': threads}), 200
     except Exception as error:
         return jsonify({'message': f'List chat threads failed: {str(error)}'}), 500
-
 
 @app.post('/api/orders')
 def create_order():
@@ -1254,6 +1475,7 @@ def create_order():
     deadline = (payload.get('deadline') or '').strip()
     file_name = (payload.get('fileName') or '').strip()
     file_data = (payload.get('fileData') or '').strip()
+    direct_executor_user_id = payload.get('directExecutorUserId')
 
     if user_id is None or not str(user_id).isdigit():
         return jsonify({'message': 'userId is required'}), 400
@@ -1269,6 +1491,8 @@ def create_order():
     if budget_value is None or budget_value <= 0:
         return jsonify({'message': 'budget must be a positive number'}), 400
 
+    direct_exec_id = int(direct_executor_user_id) if direct_executor_user_id and str(direct_executor_user_id).isdigit() else None
+
     try:
         with get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -1280,9 +1504,9 @@ def create_order():
 
                 cur.execute(
                     '''
-                    INSERT INTO orders (user_id, service, details, budget, deadline, file_name, file_data)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    RETURNING id, user_id, service, details, budget, deadline, file_name, file_data, status, created_at
+                    INSERT INTO orders (user_id, service, details, budget, deadline, file_name, file_data, direct_executor_user_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id, user_id, service, details, budget, deadline, file_name, file_data, status, direct_executor_user_id, created_at
                     ''',
                     (
                         int(user_id),
@@ -1292,15 +1516,25 @@ def create_order():
                         deadline,
                         file_name or None,
                         file_data or None,
+                        direct_exec_id,
                     ),
                 )
                 order = cur.fetchone()
+
+                if direct_exec_id and order:
+                    cur.execute(
+                        '''
+                        INSERT INTO order_responses (order_id, executor_user_id)
+                        VALUES (%s, %s)
+                        ON CONFLICT DO NOTHING
+                        ''',
+                        (order['id'], direct_exec_id),
+                    )
             conn.commit()
 
         return jsonify({'order': order}), 201
     except Exception as error:
         return jsonify({'message': f'Create order failed: {str(error)}'}), 500
-
 
 if __name__ == '__main__':
     ensure_users_table()

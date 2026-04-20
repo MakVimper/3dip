@@ -7,6 +7,7 @@ import Orders from './pages/Orders';
 import BecomeExecutor from './pages/BecomeExecutor';
 import Help from './pages/Help';
 import UserProfile from './pages/UserProfile';
+import FindExecutors from './pages/FindExecutors';
 import './App.css';
 
 const getPath = () => window.location.pathname || '/';
@@ -52,6 +53,10 @@ function App() {
 
   if (path === '/user-profile') {
     return <UserProfile />;
+  }
+
+  if (path === '/find-executors') {
+    return <FindExecutors />;
   }
 
   if (path === '/executor-cabinet') {

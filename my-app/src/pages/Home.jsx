@@ -86,7 +86,15 @@ const Home = () => {
           <div className="hero-content">
             <div className="hero-text">
               <h1 className="hero-title">Печать нужных вам деталей!</h1>
-              <button className="hero-button">Найти специалиста</button>
+              <button
+                className="hero-button"
+                onClick={() => {
+                  window.history.pushState({}, '', '/find-executors');
+                  window.dispatchEvent(new Event('app:navigate'));
+                }}
+              >
+                Найти специалиста
+              </button>
             </div>
           </div>
         </div>
@@ -100,7 +108,15 @@ const Home = () => {
 
         <div className="services-catalog">
           {services.map((s) => (
-            <button key={s.id} className="service-card">
+            <button
+              key={s.id}
+              className="service-card"
+              onClick={() => {
+                const params = new URLSearchParams({ service: s.title });
+                window.history.pushState({}, '', `/find-executors?${params.toString()}`);
+                window.dispatchEvent(new Event('app:navigate'));
+              }}
+            >
               <div className="service-card__top">
                 <span className="service-card__note">{s.note}</span>
               </div>

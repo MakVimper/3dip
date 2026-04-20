@@ -15,6 +15,15 @@ const getUserIdFromLocation = () => {
 
 const getRoleLabel = (profileData) => (profileData?.isExecutor ? 'Исполнитель' : 'Пользователь');
 
+const catalogServices = [
+  'Прототипирование изделий',
+  '3D-моделирование с нуля',
+  'Мелкосерийное производство',
+  'Функциональные детали',
+  'Печать высокоточных моделей',
+  'Крупногабаритная печать',
+];
+
 const UserProfile = () => {
   const userId = useMemo(getUserIdFromLocation, []);
   const [profileData, setProfileData] = useState(null);
@@ -27,6 +36,15 @@ const UserProfile = () => {
   const [reviewForm, setReviewForm] = useState({ rating: '5', text: '' });
   const [reviewMessage, setReviewMessage] = useState('');
   const [isReviewSending, setIsReviewSending] = useState(false);
+  const [lightbox, setLightbox] = useState(null);
+
+  const [orderModal, setOrderModal] = useState(false);
+  const [orderForm, setOrderForm] = useState({ service: '', details: '', budget: '', deadline: '' });
+  const [orderErrors, setOrderErrors] = useState({});
+  const [orderMessage, setOrderMessage] = useState('');
+  const [isOrderSending, setIsOrderSending] = useState(false);
+  const [orderFileName, setOrderFileName] = useState('');
+  const [orderFileData, setOrderFileData] = useState('');
 
   const currentUser = useMemo(() => {
     const raw = localStorage.getItem('auth_user');
@@ -37,6 +55,50 @@ const UserProfile = () => {
       return null;
     }
   }, []);
+
+  const submitOrder = async (e) => {
+    e.preventDefault();
+    const errors = {};
+    if (!orderForm.service) errors.service = 'Выберите услугу';
+    if (!orderForm.details.trim()) errors.details = 'Опишите задачу';
+    if (!orderForm.budget || Number(orderForm.budget) <= 0) errors.budget = 'Укажите бюджет';
+    if (!orderForm.deadline) errors.deadline = 'Укажите срок';
+    setOrderErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+
+    setIsOrderSending(true);
+    setOrderMessage('');
+    try {
+      const response = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: currentUser.id,
+          service: orderForm.service,
+          details: orderForm.details,
+          budget: orderForm.budget,
+          deadline: orderForm.deadline,
+          directExecutorUserId: userId,
+          fileName: orderFileName || '',
+          fileData: orderFileData || '',
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Ошибка создания заказа');
+      setOrderMessage('Заказ успешно создан!');
+      setTimeout(() => {
+        setOrderModal(false);
+        setOrderForm({ service: '', details: '', budget: '', deadline: '' });
+        setOrderFileName('');
+        setOrderFileData('');
+        setOrderMessage('');
+      }, 1500);
+    } catch (err) {
+      setOrderMessage(err.message || 'Ошибка');
+    } finally {
+      setIsOrderSending(false);
+    }
+  };
 
   useEffect(() => {
     if (!userId || !/^\d+$/.test(userId)) {
@@ -78,9 +140,12 @@ const UserProfile = () => {
         if (response.ok && data.cabinet) {
           setCabinet({
             about: data.cabinet.about || '',
-            services: Array.isArray(data.cabinet.services) ? data.cabinet.services : [],
+            services: Array.isArray(data.cabinet.services)
+              ? data.cabinet.services.map((s) => typeof s === 'string' ? { name: s, price: '' } : s)
+              : [],
             companyAvatar: data.cabinet.companyAvatar || '',
             works: Array.isArray(data.cabinet.works) ? data.cabinet.works : [],
+            priceRange: data.cabinet.priceRange || '',
           });
         } else {
           setCabinet(null);
@@ -187,22 +252,41 @@ const UserProfile = () => {
           <div className="profile-block profile-block--merged">
             <div className="orders-header">
               <div>
-                <h2>{executor ? '\u041e \u0438\u0441\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u0435' : '\u041e \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0435'}</h2>
-                <p>{executor ? '\u0418\u043d\u0444\u043e\u0440\u043c\u0430\u0446\u0438\u044f \u0438 \u0443\u0441\u043b\u0443\u0433\u0438 \u0438\u0441\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044f.' : '\u0418\u043d\u0444\u043e\u0440\u043c\u0430\u0446\u0438\u044f \u043e \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0435.'}</p>
+                <h2>{executor ? 'О исполнителе' : 'О пользователе'}</h2>
+                <p>{executor ? 'Информация и услуги исполнителя.' : 'Информация о пользователе.'}</p>
               </div>
-              <button
-                type="button"
-                className="orders-view-btn"
-                onClick={() => {
-                  if (window.history.length > 1) {
-                    window.history.back();
-                  } else {
-                    goTo('/profile?tab=orders');
-                  }
-                }}
-              >
-                {'\u041d\u0430\u0437\u0430\u0434'}
-              </button>
+              <div className="orders-item__actions">
+                <button
+                  type="button"
+                  className="orders-view-btn orders-view-btn--active"
+                  onClick={() => {
+                    if (window.history.length > 1) {
+                      window.history.back();
+                    } else {
+                      goTo('/profile?tab=orders');
+                    }
+                  }}
+                >
+                  Назад
+                </button>
+                {executor && currentUser?.id && Number(currentUser.id) !== Number(userId) && (
+                  <button
+                    type="button"
+                    className="orders-view-btn"
+                    onClick={() => {
+                      if (!currentUser?.id) { goTo('/login'); return; }
+                      setOrderModal(true);
+                      setOrderForm({ service: '', details: '', budget: '', deadline: '' });
+                      setOrderErrors({});
+                      setOrderMessage('');
+                      setOrderFileName('');
+                      setOrderFileData('');
+                    }}
+                  >
+                    Сделать заказ
+                  </button>
+                )}
+              </div>
             </div>
 
             {error && <p className="orders-message">{error}</p>}
@@ -269,56 +353,90 @@ const UserProfile = () => {
                     {!cabinet ? (
                       <p className="orders-empty">{'\u041f\u043e\u043a\u0430 \u043d\u0435\u0442 \u0434\u0430\u043d\u043d\u044b\u0445 \u043e \u043a\u0430\u0431\u0438\u043d\u0435\u0442\u0435.'}</p>
                     ) : (
-                      <div className="cabinet-grid">
-                        <div className="cabinet-column">
-                          <div className="cabinet-field">
-                            <span>{'\u041e \u0441\u0435\u0431\u0435'}</span>
-                            <p className="orders-item__details">
-                              {cabinet.about ? cabinet.about : '\u041d\u0435\u0442 \u043e\u043f\u0438\u0441\u0430\u043d\u0438\u044f.'}
-                            </p>
-                          </div>
-
-                          <div className="cabinet-field">
-                            <span>{'\u0423\u0441\u043b\u0443\u0433\u0438 \u043a\u0430\u0442\u0430\u043b\u043e\u0433\u0430'}</span>
-                            {cabinet.services.length === 0 ? (
-                              <p className="orders-empty">{'\u0423\u0441\u043b\u0443\u0433\u0438 \u043d\u0435 \u0432\u044b\u0431\u0440\u0430\u043d\u044b.'}</p>
-                            ) : (
-                              <div className="cabinet-tags">
-                                {cabinet.services.map((service) => (
-                                  <span key={service} className="cabinet-tag">
-                                    {service}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+                      <div className="uprofile-cabinet-view">
+                        {}
+                        <div className="cabinet-field">
+                          <span>{'О себе'}</span>
+                          <p className="uprofile-about-text">
+                            {cabinet.about ? cabinet.about : 'Нет описания.'}
+                          </p>
                         </div>
 
-                        <div className="cabinet-column">
+                        {}
+                        {cabinet.priceRange && (
                           <div className="cabinet-field">
-                            <span>{'\u0410\u0432\u0430\u0442\u0430\u0440 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438'}</span>
-                            <div className="cabinet-avatar">
-                              {cabinet.companyAvatar ? (
-                                <img src={cabinet.companyAvatar} alt={'\u041a\u043e\u043c\u043f\u0430\u043d\u0438\u044f'} />
-                              ) : (
-                                <div className="cabinet-avatar__placeholder">{'\u041b\u043e\u0433\u043e\u0442\u0438\u043f \u043d\u0435 \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d'}</div>
-                              )}
+                            <span>{'Примерная стоимость'}</span>
+                            <div className="uprofile-price-badge">
+                              {(() => {
+                                const [from, to] = cabinet.priceRange.split('-');
+                                const fmt = (v) => v ? Number(v).toLocaleString('ru-RU') + ' тг' : '';
+                                if (from && to) return `💰 от ${fmt(from)} до ${fmt(to)}`;
+                                if (from) return `💰 от ${fmt(from)}`;
+                                if (to) return `💰 до ${fmt(to)}`;
+                                return `💰 ${cabinet.priceRange}`;
+                              })()}
+                            </div>
+                          </div>
+                        )}
+
+                        {}
+                        <div className="cabinet-field">
+                          <span>{'Услуги каталога'}</span>
+                          {cabinet.services.length === 0 ? (
+                            <p className="orders-empty">{'Услуги не выбраны.'}</p>
+                          ) : (
+                            <div className="uprofile-services">
+                              {cabinet.services.map((s, i) => (
+                                <div key={s.name} className="uprofile-service-item">
+                                  <div className="uprofile-service-item__left">
+                                    <span className="uprofile-service-item__num">{i + 1}</span>
+                                    <span className="uprofile-service-item__name">{s.name}</span>
+                                  </div>
+                                  <span className={`uprofile-service-item__price ${!s.price ? 'uprofile-service-item__price--negotiable' : ''}`}>
+                                    {s.price ? `${Number(s.price).toLocaleString('ru-RU')} тг` : 'по договорённости'}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {}
+                        <div className="cabinet-grid">
+                          <div className="cabinet-column">
+                            <div className="cabinet-field">
+                              <span>{'Аватар компании'}</span>
+                              <div className="cabinet-avatar">
+                                {cabinet.companyAvatar ? (
+                                  <img src={cabinet.companyAvatar} alt={'Компания'} />
+                                ) : (
+                                  <div className="cabinet-avatar__placeholder">{'Логотип не загружен'}</div>
+                                )}
+                              </div>
                             </div>
                           </div>
 
-                          <div className="cabinet-field">
-                            <span>{'\u0424\u043e\u0442\u043e \u0432\u044b\u043f\u043e\u043b\u043d\u0435\u043d\u043d\u044b\u0445 \u0440\u0430\u0431\u043e\u0442'}</span>
-                            {cabinet.works.length === 0 ? (
-                              <p className="orders-empty">{'\u041f\u043e\u043a\u0430 \u043d\u0435\u0442 \u0444\u043e\u0442\u043e.'}</p>
-                            ) : (
-                              <div className="cabinet-works-grid">
-                                {cabinet.works.map((work, index) => (
-                                  <div key={`${work.name || 'work'}-${index}`} className="cabinet-work">
-                                    <img src={work.data} alt={work.name || '\u0420\u0430\u0431\u043e\u0442\u0430'} />
-                                  </div>
-                                ))}
-                              </div>
-                            )}
+                          <div className="cabinet-column">
+                            <div className="cabinet-field">
+                              <span>{'Фото выполненных работ'}</span>
+                              {cabinet.works.length === 0 ? (
+                                <p className="orders-empty">{'Пока нет фото.'}</p>
+                              ) : (
+                                <div className="cabinet-works-grid">
+                                  {cabinet.works.map((work, index) => (
+                                    <div
+                                      key={`${work.name || 'work'}-${index}`}
+                                      className="cabinet-work cabinet-work--clickable"
+                                      onClick={() => setLightbox({ src: work.data, alt: work.name || 'Работа' })}
+                                      title="Открыть на весь экран"
+                                    >
+                                      <img src={work.data} alt={work.name || 'Работа'} />
+                                      <div className="cabinet-work__zoom">⤢</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -399,6 +517,130 @@ const UserProfile = () => {
           </div>
         </section>
       </main>
+
+      {}
+      {lightbox && (
+        <div
+          className="lightbox-overlay"
+          onClick={() => setLightbox(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Просмотр фото"
+        >
+          <button
+            className="lightbox-close"
+            onClick={() => setLightbox(null)}
+            aria-label="Закрыть"
+          >
+            ✕
+          </button>
+          <img
+            className="lightbox-img"
+            src={lightbox.src}
+            alt={lightbox.alt}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+
+      {}
+      {orderModal && (
+        <div className="order-modal" onClick={() => setOrderModal(false)}>
+          <div className="order-modal__card" onClick={(e) => e.stopPropagation()}>
+            <div className="order-modal__header">
+              <h2>Заказ для {profileData?.user?.name || 'исполнителя'}</h2>
+              <button type="button" className="order-modal__close" onClick={() => setOrderModal(false)}>×</button>
+            </div>
+            <form className="order-form" onSubmit={submitOrder} noValidate>
+              <label className="order-form__field">
+                <span>Услуга</span>
+                <select
+                  value={orderForm.service}
+                  onChange={(e) => setOrderForm((p) => ({ ...p, service: e.target.value }))}
+                >
+                  <option value="" disabled>Выберите услугу</option>
+                  {(cabinet?.services?.length
+                    ? cabinet.services.map((s) => (typeof s === 'string' ? s : s.name))
+                    : catalogServices
+                  ).map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+                {orderErrors.service && <p className="order-form__error">{orderErrors.service}</p>}
+              </label>
+
+              <label className="order-form__field">
+                <span>Описание задачи</span>
+                <textarea
+                  rows="4"
+                  placeholder="Опишите что нужно сделать..."
+                  value={orderForm.details}
+                  onChange={(e) => setOrderForm((p) => ({ ...p, details: e.target.value }))}
+                />
+                {orderErrors.details && <p className="order-form__error">{orderErrors.details}</p>}
+              </label>
+
+              <div className="order-form__field">
+                <span>Прикрепить файл</span>
+                <div className="order-file">
+                  <input
+                    id="uprofile-order-file"
+                    type="file"
+                    className="order-file__input"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) { setOrderFileName(''); setOrderFileData(''); return; }
+                      setOrderFileName(file.name);
+                      const reader = new FileReader();
+                      reader.onload = () => setOrderFileData(typeof reader.result === 'string' ? reader.result : '');
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                  <label htmlFor="uprofile-order-file" className="order-file__button">
+                    Выберите файл
+                  </label>
+                  <p className="order-file__name">
+                    {orderFileName || 'Файл не выбран (необязательно)'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="order-form__row">
+                <label className="order-form__field">
+                  <span>Бюджет (тг)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="50000"
+                    value={orderForm.budget}
+                    onChange={(e) => setOrderForm((p) => ({ ...p, budget: e.target.value }))}
+                  />
+                  {orderErrors.budget && <p className="order-form__error">{orderErrors.budget}</p>}
+                </label>
+                <label className="order-form__field">
+                  <span>Срок выполнения</span>
+                  <input
+                    type="date"
+                    value={orderForm.deadline}
+                    onChange={(e) => setOrderForm((p) => ({ ...p, deadline: e.target.value }))}
+                  />
+                  {orderErrors.deadline && <p className="order-form__error">{orderErrors.deadline}</p>}
+                </label>
+              </div>
+
+              {orderMessage && (
+                <p style={{ color: orderMessage.includes('успешно') ? '#166534' : '#b91c1c', fontSize: 14 }}>
+                  {orderMessage}
+                </p>
+              )}
+
+              <button type="submit" className="order-form__submit" disabled={isOrderSending}>
+                {isOrderSending ? 'Отправка...' : 'Создать заказ'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

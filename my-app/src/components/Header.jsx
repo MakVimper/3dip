@@ -181,7 +181,7 @@ const Header = () => {
             >
               Создать заказ
             </button>
-            <a href="#find" className="nav-link">Найти специалиста</a>
+            <a href="#find" className="nav-link" onClick={(e) => { e.preventDefault(); goTo('/find-executors'); }}>Найти специалиста</a>
             <a
               href="/profile?tab=orders"
               className="nav-link"

@@ -4,7 +4,7 @@ const Footer = () => {
   return (
     <footer className="footer">
 
-      {/* Logo */}
+      {}
       <div className="footer__logo">
         <span className="footer__logo-yellow">3D</span>
         <span className="footer__logo-black">ip</span>
@@ -12,7 +12,7 @@ const Footer = () => {
 
       <hr className="footer__divider" />
 
-      {/* Nav */}
+      {}
       <nav className="footer__nav">
         <a href="#">О нас</a>
         <a href="#">Услуги</a>

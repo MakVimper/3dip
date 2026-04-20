@@ -61,7 +61,7 @@ const BecomeExecutor = () => {
           goTo('/profile?tab=executor');
         }
       } catch {
-        // ignore
+
       }
     };
 

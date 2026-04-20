@@ -154,7 +154,7 @@ const Profile = () => {
           });
         }
       } catch {
-        // ignore
+
       }
     };
 
@@ -178,7 +178,7 @@ const Profile = () => {
           });
         }
       } catch {
-        // ignore
+
       }
     };
 
@@ -324,7 +324,7 @@ const Profile = () => {
       });
       setResponseCounts(nextCounts);
     } catch {
-      // ignore
+
     }
   };
 
@@ -688,7 +688,6 @@ const Profile = () => {
       reader.readAsDataURL(file);
     });
 
-  // ИСПРАВЛЕНО: убрана случайная установка сообщения об ошибке
   const toggleCabinetService = (service) => {
     setCabinetForm((prev) => {
       const hasService = prev.services.includes(service);
@@ -1304,7 +1303,6 @@ const Profile = () => {
                   )}
                 </form>
 
-
                 <h2>Смена пароля</h2>
                 <form onSubmit={onChangePassword} className="profile-table">
                   <div className="profile-row">
@@ -1342,7 +1340,6 @@ const Profile = () => {
                     {isPasswordLoading ? 'Сохранение...' : 'Обновить пароль'}
                   </button>
                 </form>
-
 
                 <div className="profile-reviews">
                   <div className="orders-header">
