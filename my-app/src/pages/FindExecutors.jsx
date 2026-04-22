@@ -57,6 +57,8 @@ const FindExecutors = () => {
   const [orderErrors, setOrderErrors] = useState({});
   const [orderMessage, setOrderMessage] = useState('');
   const [isOrderSending, setIsOrderSending] = useState(false);
+  const [orderFileName, setOrderFileName] = useState('');
+  const [orderFileData, setOrderFileData] = useState('');
 
   const loadExecutors = useCallback(async (activeFilters) => {
     setIsLoading(true);
@@ -114,6 +116,8 @@ const FindExecutors = () => {
     setOrderForm({ service: '', details: '', budget: '', deadline: '' });
     setOrderErrors({});
     setOrderMessage('');
+    setOrderFileName('');
+    setOrderFileData('');
   };
 
   const submitOrder = async (e) => {
@@ -139,6 +143,8 @@ const FindExecutors = () => {
           budget: orderForm.budget,
           deadline: orderForm.deadline,
           directExecutorUserId: orderModal.executor.user_id,
+          fileName: orderFileName || '',
+          fileData: orderFileData || '',
         }),
       });
       const data = await response.json();
@@ -382,6 +388,54 @@ const FindExecutors = () => {
                 />
                 {orderErrors.details && <p className="order-form__error">{orderErrors.details}</p>}
               </label>
+
+              <div className="order-form__field">
+                <span>Прикрепить файл или изображение</span>
+                <div className="order-file">
+                  <input
+                    id="fe-order-file"
+                    type="file"
+                    className="order-file__input"
+                    accept="image/*,.pdf,.doc,.docx,.stl,.obj,.3ds"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) { setOrderFileName(''); setOrderFileData(''); return; }
+                      if (file.size > 5 * 1024 * 1024) {
+                        alert('Файл слишком большой. Максимальный размер: 5 МБ');
+                        e.target.value = '';
+                        return;
+                      }
+                      setOrderFileName(file.name);
+                      const reader = new FileReader();
+                      reader.onload = () => setOrderFileData(typeof reader.result === 'string' ? reader.result : '');
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                  <label htmlFor="fe-order-file" className="order-file__button">
+                     Выберите файл
+                  </label>
+                  <p className="order-file__name">
+                    {orderFileName || 'Файл не выбран (необязательно)'}
+                  </p>
+                </div>
+                {orderFileData && orderFileName && /\.(jpg|jpeg|png|gif|webp)$/i.test(orderFileName) && (
+                  <div className="order-file__preview">
+                    <img src={orderFileData} alt="Превью" />
+                    <button
+                      type="button"
+                      className="order-file__remove"
+                      onClick={() => {
+                        setOrderFileName('');
+                        setOrderFileData('');
+                        const input = document.getElementById('fe-order-file');
+                        if (input) input.value = '';
+                      }}
+                    >
+                      ✕ Удалить
+                    </button>
+                  </div>
+                )}
+              </div>
 
               <div className="order-form__row">
                 <label className="order-form__field">
