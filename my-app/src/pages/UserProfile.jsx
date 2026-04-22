@@ -508,7 +508,7 @@ const UserProfile = () => {
                     </div>
                     <p className="review-item__text">{review.text}</p>
                     <span className="review-item__date">
-                      {new Date(review.created_at).toLocaleString()}
+                      {new Date(review.created_at).toLocaleDateString('ru-RU')}
                     </span>
                   </div>
                 ))}

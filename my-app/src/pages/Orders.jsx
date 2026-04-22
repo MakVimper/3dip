@@ -295,8 +295,8 @@ const Orders = () => {
                   <article key={order.id} className="orders-item">
                     <div className="orders-item__head">
                       <div>
-                        <h3>{order.service}</h3>
-                        <p>Срок: {order.deadline}</p>
+                        <h3>{order.service} <span style={{fontSize:'13px',fontWeight:500,color:'#64748b'}}>#{order.id}</span></h3>
+                        <p>Срок: {new Date(order.deadline).toLocaleDateString('ru-RU')}</p>
                       </div>
                       <span
                         className={`orders-status orders-status--${statusClassMap[order.status] || 'pending'}`}

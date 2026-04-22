@@ -1554,7 +1554,7 @@ const Profile = () => {
                           </div>
                           <p className="review-item__text">{review.text}</p>
                           <span className="review-item__date">
-                            {new Date(review.created_at).toLocaleString()}
+                            {new Date(review.created_at).toLocaleDateString('ru-RU')}
                           </span>
                         </div>
                       ))}
@@ -1670,9 +1670,8 @@ const Profile = () => {
                         <article key={order.id} className={`orders-item ${order.status === 'Отказано' ? 'orders-item--declined' : ''}`}>
                           <div className="orders-item__head">
                             <div>
-                              <h3>{order.service}</h3>
-                              <p>Срок: {order.deadline}</p>
-                              <p>Номер заказа: #{order.id}</p>
+                              <h3>{order.service} <span style={{fontSize:'13px',fontWeight:500,color:'#64748b'}}>#{order.id}</span></h3>
+                              <p>Срок: {new Date(order.deadline).toLocaleDateString('ru-RU')}</p>
                               {order.direct_executor_user_id && (
                                 <p>
                                   Исполнитель:{' '}
@@ -1929,7 +1928,7 @@ const Profile = () => {
                           >
                             <div className="orders-item__head">
                               <div>
-                                <h3>{order.service}</h3>
+                                <h3>{order.service} <span style={{fontSize:'13px',fontWeight:500,color:'#64748b'}}>#{order.id}</span></h3>
                                 <p>
                                   Заказчик:{' '}
                                   <button type="button" className="profile-link-btn"
@@ -1937,14 +1936,16 @@ const Profile = () => {
                                     {order.customer_name || 'Заказчик'}
                                   </button>
                                 </p>
-                                <p>Срок: {order.deadline} · #{order.id}</p>
+                                <p>Срок: {new Date(order.deadline).toLocaleDateString('ru-RU')}</p>
+                              </div>
+                              <div className="orders-item__head-right">
+                                <span className={`orders-status orders-status--${statusClassMap[order.status] || 'pending'}`}>
+                                  {order.status}
+                                </span>
                                 {isDirect && (
                                   <span className="orders-item__direct-tag">Прямой заказ</span>
                                 )}
                               </div>
-                              <span className={`orders-status orders-status--${statusClassMap[order.status] || 'pending'}`}>
-                                {order.status}
-                              </span>
                             </div>
                             <p className="orders-item__details">{order.details}</p>
                             <div className="orders-item__footer">
@@ -2069,8 +2070,8 @@ const Profile = () => {
                     <article key={order.id} className="orders-item">
                       <div className="orders-item__head">
                         <div>
-                          <h3>{order.service}</h3>
-                          <p>Срок: {order.deadline}</p>
+                          <h3>{order.service} <span style={{fontSize:'13px',fontWeight:500,color:'#64748b'}}>#{order.id}</span></h3>
+                          <p>Срок: {new Date(order.deadline).toLocaleDateString('ru-RU')}</p>
                         </div>
                         <span className={`orders-status orders-status--${statusClassMap[order.status] || 'pending'}`}>
                           {order.status}
@@ -2221,7 +2222,7 @@ const Profile = () => {
                             <p className="orders-item__details">{thread.last_message}</p>
                             <p className="orders-item__details">Номер заказа: #{thread.order_id}</p>
                             <div className="orders-item__footer">
-                              <span>{new Date(thread.last_time).toLocaleString()}</span>
+                              <span>{new Date(thread.last_time).toLocaleDateString('ru-RU')}</span>
                               <button
                                 type="button"
                                 className={`orders-view-btn ${isActiveThread ? 'orders-view-btn--selected' : ''}`}
@@ -2300,7 +2301,7 @@ const Profile = () => {
                                       </button>
                                     )
                                   )}
-                                  <span>{new Date(msg.created_at).toLocaleString()}</span>
+                                  <span>{new Date(msg.created_at).toLocaleDateString('ru-RU')}</span>
                                 </div>
                               ))
                             )}
@@ -2504,7 +2505,7 @@ const Profile = () => {
                             </button>
                           )
                         )}
-                        <span>{new Date(msg.created_at).toLocaleString()}</span>
+                        <span>{new Date(msg.created_at).toLocaleDateString('ru-RU')}</span>
                       </div>
                     ))
                   )}
