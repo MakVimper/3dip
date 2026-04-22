@@ -13,6 +13,7 @@ const statusClassMap = {
   'Выполняется': 'progress',
   'Изготовка изделия': 'inwork',
   'Готов': 'done',
+  'Отказано': 'declined',
 };
 
 const catalogServices = [
@@ -132,11 +133,30 @@ const Profile = () => {
   const [cabinetMessage, setCabinetMessage] = useState('');
   const [isCabinetError, setIsCabinetError] = useState(false);
 
+  // Заказы исполнителя (прямые)
+  const [executorOrders, setExecutorOrders] = useState([]);
+  const [isExecutorOrdersLoading, setIsExecutorOrdersLoading] = useState(false);
+  const [executorOrdersMessage, setExecutorOrdersMessage] = useState('');
+  const [ordersSubTab, setOrdersSubTab] = useState('my'); // 'my' | 'clients'
+
+  // Модалка отказа
+  const [declineModal, setDeclineModal] = useState(null); // { orderId }
+  const [declineReason, setDeclineReason] = useState('');
+  const [isDeclining, setIsDeclining] = useState(false);
+  const [declineError, setDeclineError] = useState('');
+
+  // Фильтры
+  const [ordersStatusFilter, setOrdersStatusFilter] = useState('all'); // 'all' | 'Ожидает' | 'Изготовка изделия' | 'Готов' | 'Отказано'
+  const [chatsStatusFilter, setChatsStatusFilter] = useState('all'); // 'all' | 'Ожидает' | 'Изготовка изделия' | 'Готов'
+  const [executorOrdersStatusFilter, setExecutorOrdersStatusFilter] = useState('all'); // Фильтр для заказов клиентов
+
   const isChatLockedForUser = (orderUserId, acceptedExecutorUserId) => {
-    if (!user?.id) return false;
-    if (!acceptedExecutorUserId) return false;
-    if (Number(orderUserId) === Number(user.id)) return false;
-    return Number(acceptedExecutorUserId) !== Number(user.id);
+    // Чат заблокирован только если:
+    // - пользователь не заказчик этого заказа
+    // - И заказчик уже выбрал другого исполнителя (не текущего)
+    // - И у текущего пользователя нет сообщений в этом чате (нет треда)
+    // Логика перенесена на уровень рендера — здесь всегда false
+    return false;
   };
 
   useEffect(() => {
@@ -172,7 +192,11 @@ const Profile = () => {
         if (response.ok && data.cabinet) {
           setCabinetForm({
             about: data.cabinet.about || '',
-            services: Array.isArray(data.cabinet.services) ? data.cabinet.services : [],
+            services: Array.isArray(data.cabinet.services)
+              ? data.cabinet.services.map((s) =>
+                  typeof s === 'string' ? { name: s, price: '' } : s
+                )
+              : [],
             companyAvatar: data.cabinet.companyAvatar || '',
             works: Array.isArray(data.cabinet.works) ? data.cabinet.works : [],
           });
@@ -304,6 +328,64 @@ const Profile = () => {
       setMarketMessage(error.message || 'Ошибка загрузки заказов');
     } finally {
       setIsMarketLoading(false);
+    }
+  };
+
+  const loadExecutorOrders = async () => {
+    if (!user?.id) return;
+    setIsExecutorOrdersLoading(true);
+    setExecutorOrdersMessage('');
+    try {
+      const response = await fetch(`/api/orders/executor?userId=${user.id}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Ошибка загрузки заказов');
+      setExecutorOrders(Array.isArray(data.orders) ? data.orders : []);
+    } catch (error) {
+      setExecutorOrdersMessage(error.message || 'Ошибка загрузки заказов');
+    } finally {
+      setIsExecutorOrdersLoading(false);
+    }
+  };
+
+  const executorAcceptOrder = async (orderId) => {
+    if (!user?.id) return;
+    try {
+      const response = await fetch(`/api/orders/${orderId}/executor-accept`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ executorUserId: user.id }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Ошибка принятия заказа');
+      await loadExecutorOrders();
+    } catch (error) {
+      setExecutorOrdersMessage(error.message || 'Ошибка принятия заказа');
+    }
+  };
+
+  const executorDeclineOrder = async () => {
+    if (!user?.id || !declineModal) return;
+    if (!declineReason.trim()) {
+      setDeclineError('Укажите причину отказа');
+      return;
+    }
+    setIsDeclining(true);
+    setDeclineError('');
+    try {
+      const response = await fetch(`/api/orders/${declineModal.orderId}/decline`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ executorUserId: user.id, reason: declineReason.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Ошибка отказа');
+      setDeclineModal(null);
+      setDeclineReason('');
+      await loadExecutorOrders();
+    } catch (error) {
+      setDeclineError(error.message || 'Ошибка отказа');
+    } finally {
+      setIsDeclining(false);
     }
   };
 
@@ -451,6 +533,22 @@ const Profile = () => {
       acceptedExecutorUserId: acceptedExecutorUserId || null,
     });
     await loadChatMessages(orderId, responderId);
+
+    // Пометить сообщения прочитанными и обнулить счётчик локально
+    if (user?.id) {
+      fetch('/api/chats/read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, userId: user.id }),
+      }).catch(() => {});
+      setChatThreads((prev) =>
+        prev.map((t) =>
+          Number(t.order_id) === Number(orderId) && Number(t.peer_id) === Number(responderId)
+            ? { ...t, unread_count: 0 }
+            : t,
+        ),
+      );
+    }
   };
 
   const loadChatMessages = async (orderId, peerId) => {
@@ -574,6 +672,40 @@ const Profile = () => {
     }
   };
 
+  // Тихое обновление тредов без спиннера (для polling)
+  const refreshChatThreads = async () => {
+    if (!user?.id) return;
+    try {
+      const response = await fetch(`/api/chats/threads?userId=${user.id}`);
+      const data = await response.json();
+      if (response.ok) {
+        setChatThreads((prev) => {
+          const next = Array.isArray(data.threads) ? data.threads : [];
+          // Обнуляем unread_count для активного чата (уже открыт)
+          return next.map((t) => {
+            if (
+              activeChat &&
+              Number(t.order_id) === Number(activeChat.orderId) &&
+              Number(t.peer_id) === Number(activeChat.peerId)
+            ) {
+              return { ...t, unread_count: 0 };
+            }
+            return t;
+          });
+        });
+      }
+    } catch {
+      // тихо игнорируем
+    }
+  };
+
+  // Polling: обновляем треды каждые 8 секунд пока вкладка чатов активна
+  useEffect(() => {
+    if (activeTab !== 'chats' || !user?.id) return;
+    const interval = setInterval(refreshChatThreads, 8000);
+    return () => clearInterval(interval);
+  }, [activeTab, user, activeChat]);
+
   const setTab = (tab) => {
     if (tab !== 'chats') setActiveChat(null);
     setActiveTab(tab);
@@ -587,9 +719,9 @@ const Profile = () => {
       const nextTab = getTabFromLocation();
       if (nextTab !== 'chats') setActiveChat(null);
       setActiveTab(nextTab);
-      if (nextTab === 'orders') loadOrders();
+      if (nextTab === 'orders') { loadOrders(); if (executor) loadExecutorOrders(); }
       if (nextTab === 'executor') loadExecutor();
-      if (nextTab === 'market') loadMarketOrders();
+      if (nextTab === 'market') { loadMarketOrders(); loadExecutorOrders(); }
       if (nextTab === 'chats') loadChatThreads();
       if (nextTab === 'about') loadProfileReviews();
     };
@@ -688,14 +820,23 @@ const Profile = () => {
       reader.readAsDataURL(file);
     });
 
-  const toggleCabinetService = (service) => {
+  const toggleCabinetService = (name) => {
     setCabinetForm((prev) => {
-      const hasService = prev.services.includes(service);
-      const nextServices = hasService
-        ? prev.services.filter((item) => item !== service)
-        : [...prev.services, service];
+      const has = prev.services.some((s) => s.name === name);
+      const nextServices = has
+        ? prev.services.filter((s) => s.name !== name)
+        : [...prev.services, { name, price: '' }];
       return { ...prev, services: nextServices };
     });
+  };
+
+  const setCabinetServicePrice = (name, price) => {
+    setCabinetForm((prev) => ({
+      ...prev,
+      services: prev.services.map((s) =>
+        s.name === name ? { ...s, price } : s
+      ),
+    }));
   };
 
   const onCompanyAvatarChange = async (event) => {
@@ -793,7 +934,11 @@ const Profile = () => {
       if (data.cabinet) {
         setCabinetForm({
           about: data.cabinet.about || '',
-          services: Array.isArray(data.cabinet.services) ? data.cabinet.services : [],
+          services: Array.isArray(data.cabinet.services)
+            ? data.cabinet.services.map((s) =>
+                typeof s === 'string' ? { name: s, price: '' } : s
+              )
+            : [],
           companyAvatar: data.cabinet.companyAvatar || '',
           works: Array.isArray(data.cabinet.works) ? data.cabinet.works : [],
         });
@@ -929,18 +1074,39 @@ const Profile = () => {
     if (!executor) setChatMode('customer');
   }, [executor]);
 
+  const filteredOrders = useMemo(() => {
+    if (ordersStatusFilter === 'all') return orders;
+    return orders.filter(order => order.status === ordersStatusFilter);
+  }, [orders, ordersStatusFilter]);
+
+  const filteredExecutorOrders = useMemo(() => {
+    if (executorOrdersStatusFilter === 'all') return executorOrders;
+    return executorOrders.filter(order => order.status === executorOrdersStatusFilter);
+  }, [executorOrders, executorOrdersStatusFilter]);
+
   const filteredChatThreads = useMemo(() => {
-    if (!user?.id) return chatThreads;
+    if (!user?.id) return [];
+    
+    let threads = chatThreads;
+    
+    // Фильтр по режиму (исполнитель/заказчик)
     if (chatMode === 'executor') {
-      return chatThreads.filter(
-        (thread) => Number(thread.accepted_executor_user_id) === Number(user.id),
+      threads = threads.filter(
+        (thread) =>
+          Number(thread.accepted_executor_user_id) === Number(user.id) ||
+          Number(thread.order_user_id) !== Number(user.id),
       );
+    } else if (chatMode === 'customer') {
+      threads = threads.filter((thread) => Number(thread.order_user_id) === Number(user.id));
     }
-    if (chatMode === 'customer') {
-      return chatThreads.filter((thread) => Number(thread.order_user_id) === Number(user.id));
+    
+    // Фильтр по статусу
+    if (chatsStatusFilter !== 'all') {
+      threads = threads.filter(thread => thread.order_status === chatsStatusFilter);
     }
-    return chatThreads;
-  }, [chatThreads, chatMode, user]);
+    
+    return threads;
+  }, [chatThreads, chatMode, user, chatsStatusFilter]);
 
   if (!user) {
     return (
@@ -990,7 +1156,7 @@ const Profile = () => {
               <button
                 type="button"
                 className={`profile-tab ${activeTab === 'market' ? 'profile-tab--active' : ''}`}
-                onClick={() => { setTab('market'); loadMarketOrders(); }}
+                onClick={() => { setTab('market'); loadMarketOrders(); loadExecutorOrders(); }}
               >
                 Найти заказ
               </button>
@@ -1158,27 +1324,52 @@ const Profile = () => {
                     <section className="editor-card">
                       <div className="editor-card__head">
                         <div><h4>Каталог услуг</h4><p>Выберите услуги, которые вы можете выполнить.</p></div>
-                        <span className="editor-card__badge">Услуги</span>
+                        <span className="editor-card__badge">
+                          {cabinetForm.services.length > 0 ? `${cabinetForm.services.length} выбрано` : 'Услуги'}
+                        </span>
                       </div>
-                      <div className="services-grid">
-                        {catalogServices.map((service) => {
-                          const isActive = cabinetForm.services.includes(service);
+                      <div className="svc-grid">
+                        {[
+                          { name: 'Прототипирование изделий', icon: '🧩' },
+                          { name: '3D-моделирование с нуля', icon: '✏️' },
+                          { name: 'Мелкосерийное производство', icon: '🏭' },
+                          { name: 'Функциональные детали', icon: '⚙️' },
+                          { name: 'Печать высокоточных моделей', icon: '🎯' },
+                          { name: 'Крупногабаритная печать', icon: '📦' },
+                        ].map(({ name, icon }) => {
+                          const activeService = cabinetForm.services.find((s) => s.name === name);
+                          const isActive = Boolean(activeService);
                           return (
-                            <label key={service} className={`service-card ${isActive ? 'service-card--active' : ''}`}>
-                              <input type="checkbox" checked={isActive} onChange={() => toggleCabinetService(service)} />
-                              <div className="service-card__content">
-                                <span className="service-card__title">{service}</span>
-                                <span className="service-card__note">Услуга из каталога</span>
-                              </div>
-                            </label>
+                            <div key={name} className={`svc-chip ${isActive ? 'svc-chip--on' : ''}`}>
+                              <label className="svc-chip__row">
+                                <input
+                                  type="checkbox"
+                                  checked={isActive}
+                                  onChange={() => toggleCabinetService(name)}
+                                  className="svc-chip__input"
+                                />
+                                <span className="svc-chip__icon">{icon}</span>
+                                <span className="svc-chip__name">{name}</span>
+                                <span className="svc-chip__check">{isActive ? '✓' : ''}</span>
+                              </label>
+                              {isActive && (
+                                <div className="svc-chip__price-row">
+                                  <span className="svc-chip__price-label">Цена (тг)</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="500"
+                                    placeholder="по договорённости"
+                                    className="svc-chip__price-input"
+                                    value={activeService.price}
+                                    onChange={(e) => setCabinetServicePrice(name, e.target.value)}
+                                  />
+                                </div>
+                              )}
+                            </div>
                           );
                         })}
                       </div>
-                      {cabinetForm.services.length > 0 && (
-                        <div className="cabinet-tags">
-                          {cabinetForm.services.map((s) => <span key={s} className="cabinet-tag">{s}</span>)}
-                        </div>
-                      )}
                     </section>
 
                     {/* Галерея работ */}
@@ -1379,137 +1570,480 @@ const Profile = () => {
             <section className="profile-card profile-card--orders">
               <div className="orders-header">
                 <div>
-                  <h2>Мои заказы</h2>
-                  <p>История ваших заказов и их текущий статус.</p>
+                  <h2>Заказы</h2>
+                  <p>История заказов и их текущий статус.</p>
                 </div>
-                <button
-                  type="button"
-                  className="orders-create-btn"
-                  onClick={() => {
-                    if (!user?.id) {
-                      window.alert('Для создания заказа зарегистрируйтесь!');
-                      return;
-                    }
-                    setIsOrderModalOpen(true);
-                    setOrderErrors({});
-                  }}
-                >
-                  Создать заказ
-                </button>
-              </div>
-
-              {ordersMessage && <p className="orders-message">{ordersMessage}</p>}
-
-              <div className="orders-list">
-                {isOrdersLoading ? (
-                  <p className="orders-empty">Загрузка заказов...</p>
-                ) : orders.length === 0 ? (
-                  <p className="orders-empty">Пока нет заказов. Создайте первый заказ.</p>
-                ) : (
-                  orders.map((order) => (
-                    <article key={order.id} className="orders-item">
-                      <div className="orders-item__head">
-                        <div>
-                          <h3>{order.service}</h3>
-                          <p>Срок: {order.deadline}</p>
-                          <p>Номер заказа: #{order.id}</p>
-                        </div>
-                        <span className={`orders-status orders-status--${statusClassMap[order.status] || 'pending'}`}>
-                          {order.status}
-                        </span>
-                      </div>
-                      <p className="orders-item__details">{order.details}</p>
-                      <div className="orders-item__footer">
-                        <span>Бюджет: {Number(order.budget).toLocaleString()} тг</span>
-                        {order.file_name && <span>Файл: {order.file_name}</span>}
-                      </div>
-
-                      {order.status === 'Готов' ? (
-                        <div className="orders-item__responses">
-                          <div className="orders-item__actions">
-                            <button
-                              type="button"
-                              className="orders-view-btn"
-                              onClick={() => openPreview(order.file_name, order.file_data)}
-                              disabled={!order.file_data}
-                              title={order.file_data ? '' : 'Файл не прикреплён'}
-                            >
-                              Открыть файл
-                            </button>
-                          </div>
-                        </div>
-                      ) : order.status === 'Изготовка изделия' ? (
-                        <div className="orders-item__responses">
-                          <span>Статус: Изготовка изделия</span>
-                          <span>
-                            Изготовляет:{' '}
-                            {order.accepted_executor_user_id ? (
-                              <button
-                                type="button"
-                                className="profile-link-btn"
-                                onClick={() => openUserProfile(order.accepted_executor_user_id)}
-                              >
-                                {getOrderExecutorLabel(order) || 'Исполнитель'}
-                              </button>
-                            ) : (
-                              getOrderExecutorLabel(order) || 'Исполнитель не указан'
-                            )}
-                          </span>
-                          <div className="orders-item__actions">
-                            <button
-                              type="button"
-                              className="orders-view-btn"
-                              onClick={() => completeOrder(order.id)}
-                            >
-                              Подтвердить работу
-                            </button>
-                            <button
-                              type="button"
-                              className="orders-view-btn"
-                              onClick={() => openPreview(order.file_name, order.file_data)}
-                              disabled={!order.file_data}
-                              title={order.file_data ? '' : 'Файл не прикреплён'}
-                            >
-                              Открыть файл
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="orders-item__responses">
-                          <span>Откликнулось {responseCounts[String(order.id)] || 0} исполнителей</span>
-                          <div className="orders-item__actions">
-                            <button
-                              type="button"
-                              className="orders-view-btn"
-                              onClick={() => openResponsesModal(order.id, order.service, order.status)}
-                            >
-                              Посмотреть отклики
-                            </button>
-                            <button
-                              type="button"
-                              className="orders-view-btn"
-                              onClick={() => openPreview(order.file_name, order.file_data)}
-                              disabled={!order.file_data}
-                              title={order.file_data ? '' : 'Файл не прикреплён'}
-                            >
-                              Открыть файл
-                            </button>
-                            {order.status === 'Ожидает' && (
-                              <button
-                                type="button"
-                                className="orders-view-btn orders-view-btn--danger"
-                                onClick={() => deleteOrder(order.id)}
-                              >
-                                Удалить
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </article>
-                  ))
+                {ordersSubTab === 'my' && (
+                  <button
+                    type="button"
+                    className="orders-create-btn"
+                    onClick={() => {
+                      if (!user?.id) { window.alert('Для создания заказа зарегистрируйтесь!'); return; }
+                      setIsOrderModalOpen(true);
+                      setOrderErrors({});
+                    }}
+                  >
+                    Создать заказ
+                  </button>
                 )}
               </div>
+
+              {/* Переключатель — только для исполнителей */}
+              {executor && (
+                <div className="orders-subtab-switcher">
+                  <button
+                    type="button"
+                    className={`orders-subtab-btn ${ordersSubTab === 'my' ? 'orders-subtab-btn--active' : ''}`}
+                    onClick={() => setOrdersSubTab('my')}
+                  >
+                    Мои заказы
+                  </button>
+                  <button
+                    type="button"
+                    className={`orders-subtab-btn ${ordersSubTab === 'clients' ? 'orders-subtab-btn--active' : ''}`}
+                    onClick={() => { setOrdersSubTab('clients'); loadExecutorOrders(); }}
+                  >
+                    Заказы клиентов
+                  </button>
+                </div>
+              )}
+
+              {/* Фильтр по статусу для "Мои заказы" */}
+              {ordersSubTab === 'my' && (
+                <div className="orders-filter">
+                  <span className="orders-filter__label">Статус:</span>
+                  <div className="orders-filter__buttons">
+                    <button
+                      type="button"
+                      className={`orders-filter-btn ${ordersStatusFilter === 'all' ? 'orders-filter-btn--active' : ''}`}
+                      onClick={() => setOrdersStatusFilter('all')}
+                    >
+                      Все
+                    </button>
+                    <button
+                      type="button"
+                      className={`orders-filter-btn ${ordersStatusFilter === 'Ожидает' ? 'orders-filter-btn--active' : ''}`}
+                      onClick={() => setOrdersStatusFilter('Ожидает')}
+                    >
+                      Ожидает
+                    </button>
+                    <button
+                      type="button"
+                      className={`orders-filter-btn ${ordersStatusFilter === 'Изготовка изделия' ? 'orders-filter-btn--active' : ''}`}
+                      onClick={() => setOrdersStatusFilter('Изготовка изделия')}
+                    >
+                      В работе
+                    </button>
+                    <button
+                      type="button"
+                      className={`orders-filter-btn ${ordersStatusFilter === 'Готов' ? 'orders-filter-btn--active' : ''}`}
+                      onClick={() => setOrdersStatusFilter('Готов')}
+                    >
+                      Готов
+                    </button>
+                    <button
+                      type="button"
+                      className={`orders-filter-btn ${ordersStatusFilter === 'Отказано' ? 'orders-filter-btn--active' : ''}`}
+                      onClick={() => setOrdersStatusFilter('Отказано')}
+                    >
+                      Отказано
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── МОИ ЗАКАЗЫ ── */}
+              {ordersSubTab === 'my' && (
+                <>
+                  {ordersMessage && <p className="orders-message">{ordersMessage}</p>}
+                  <div className="orders-list">
+                    {isOrdersLoading ? (
+                      <p className="orders-empty">Загрузка заказов...</p>
+                    ) : filteredOrders.length === 0 ? (
+                      <p className="orders-empty">
+                        {ordersStatusFilter === 'all' 
+                          ? 'Пока нет заказов. Создайте первый заказ.' 
+                          : `Нет заказов со статусом "${ordersStatusFilter}".`}
+                      </p>
+                    ) : (
+                      filteredOrders.map((order) => (
+                        <article key={order.id} className={`orders-item ${order.status === 'Отказано' ? 'orders-item--declined' : ''}`}>
+                          <div className="orders-item__head">
+                            <div>
+                              <h3>{order.service}</h3>
+                              <p>Срок: {order.deadline}</p>
+                              <p>Номер заказа: #{order.id}</p>
+                              {order.direct_executor_user_id && (
+                                <p>
+                                  Исполнитель:{' '}
+                                  <button
+                                    type="button"
+                                    className="profile-link-btn"
+                                    onClick={() => openUserProfile(order.direct_executor_user_id)}
+                                  >
+                                    {order.direct_executor_name || 'Исполнитель'}
+                                  </button>
+                                </p>
+                              )}
+                              {order.status === 'Изготовка изделия' && order.accepted_executor_user_id && (
+                                <p>
+                                  Изготовляет:{' '}
+                                  <button
+                                    type="button"
+                                    className="profile-link-btn"
+                                    onClick={() => openUserProfile(order.accepted_executor_user_id)}
+                                  >
+                                    {getOrderExecutorLabel(order) || 'Исполнитель'}
+                                  </button>
+                                </p>
+                              )}
+                            </div>
+                            <span className={`orders-status orders-status--${statusClassMap[order.status] || 'pending'}`}>
+                              {order.status}
+                            </span>
+                          </div>
+                          <p className="orders-item__details">{order.details}</p>
+                          <div className="orders-item__footer">
+                            <span>Бюджет: {Number(order.budget).toLocaleString()} тг</span>
+                            {order.file_name && <span>Файл: {order.file_name}</span>}
+                          </div>
+
+                          {order.status === 'Отказано' ? (
+                            <div className="orders-item__responses">
+                              <div className="orders-item__actions">
+                                {order.decline_reason && (
+                                  <button
+                                    type="button"
+                                    className="orders-view-btn orders-view-btn--declined-reason"
+                                    onClick={() => window.alert(`Причина отказа:\n\n${order.decline_reason}`)}
+                                  >
+                                    Причина отказа
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ) : order.status === 'Готов' ? (
+                            <div className="orders-item__responses">
+                              <div className="orders-item__actions">
+                                <button
+                                  type="button"
+                                  className="orders-view-btn"
+                                  onClick={() => openPreview(order.file_name, order.file_data)}
+                                  disabled={!order.file_data}
+                                  title={order.file_data ? '' : 'Файл не прикреплён'}
+                                >
+                                  Открыть файл
+                                </button>
+                              </div>
+                            </div>
+                          ) : order.status === 'Изготовка изделия' ? (
+                            <div className="orders-item__responses">
+                              <div className="orders-item__actions">
+                                <button
+                                  type="button"
+                                  className="orders-view-btn"
+                                  onClick={() => completeOrder(order.id)}
+                                >
+                                  Подтвердить работу
+                                </button>
+                                {order.accepted_executor_user_id && (
+                                  <button
+                                    type="button"
+                                    className="orders-view-btn orders-view-btn--chat"
+                                    onClick={() => {
+                                      setTab('chats');
+                                      openChatWithResponder(
+                                        order.id,
+                                        order.accepted_executor_user_id,
+                                        getOrderExecutorLabel(order) || 'Исполнитель',
+                                        order.status,
+                                        order.user_id,
+                                        order.accepted_executor_user_id,
+                                      );
+                                    }}
+                                  >
+                                    Написать
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  className="orders-view-btn"
+                                  onClick={() => openPreview(order.file_name, order.file_data)}
+                                  disabled={!order.file_data}
+                                  title={order.file_data ? '' : 'Файл не прикреплён'}
+                                >
+                                  Открыть файл
+                                </button>
+                              </div>
+                            </div>
+                          ) : order.direct_executor_user_id ? (
+                            <div className="orders-item__responses">
+                              <span className="orders-item__direct-label">Прямой заказ — ожидает ответа исполнителя</span>
+                              <div className="orders-item__actions">
+                                <button
+                                  type="button"
+                                  className="orders-view-btn orders-view-btn--chat"
+                                  onClick={() => {
+                                    setTab('chats');
+                                    openChatWithResponder(
+                                      order.id,
+                                      order.direct_executor_user_id,
+                                      order.direct_executor_name || 'Исполнитель',
+                                      order.status,
+                                      order.user_id,
+                                      order.accepted_executor_user_id,
+                                    );
+                                  }}
+                                >
+                                  Написать
+                                </button>
+                                <button
+                                  type="button"
+                                  className="orders-view-btn"
+                                  onClick={() => openPreview(order.file_name, order.file_data)}
+                                  disabled={!order.file_data}
+                                  title={order.file_data ? '' : 'Файл не прикреплён'}
+                                >
+                                  Открыть файл
+                                </button>
+                                {order.status === 'Ожидает' && (
+                                  <button
+                                    type="button"
+                                    className="orders-view-btn orders-view-btn--danger"
+                                    onClick={() => deleteOrder(order.id)}
+                                  >
+                                    Удалить
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="orders-item__responses">
+                              <span>Откликнулось {responseCounts[String(order.id)] || 0} исполнителей</span>
+                              <div className="orders-item__actions">
+                                <button
+                                  type="button"
+                                  className="orders-view-btn"
+                                  onClick={() => openResponsesModal(order.id, order.service, order.status)}
+                                >
+                                  Посмотреть отклики
+                                </button>
+                                <button
+                                  type="button"
+                                  className="orders-view-btn"
+                                  onClick={() => openPreview(order.file_name, order.file_data)}
+                                  disabled={!order.file_data}
+                                  title={order.file_data ? '' : 'Файл не прикреплён'}
+                                >
+                                  Открыть файл
+                                </button>
+                                {order.status === 'Ожидает' && (
+                                  <button
+                                    type="button"
+                                    className="orders-view-btn orders-view-btn--danger"
+                                    onClick={() => deleteOrder(order.id)}
+                                  >
+                                    Удалить
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </article>
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* ── ЗАКАЗЫ КЛИЕНТОВ (прямые + откликнулся) ── */}
+              {ordersSubTab === 'clients' && executor && (
+                <>
+                  {/* Фильтр по статусу для "Заказы клиентов" */}
+                  <div className="orders-filter">
+                    <span className="orders-filter__label">Статус:</span>
+                    <div className="orders-filter__buttons">
+                      <button
+                        type="button"
+                        className={`orders-filter-btn ${executorOrdersStatusFilter === 'all' ? 'orders-filter-btn--active' : ''}`}
+                        onClick={() => setExecutorOrdersStatusFilter('all')}
+                      >
+                        Все
+                      </button>
+                      <button
+                        type="button"
+                        className={`orders-filter-btn ${executorOrdersStatusFilter === 'Ожидает' ? 'orders-filter-btn--active' : ''}`}
+                        onClick={() => setExecutorOrdersStatusFilter('Ожидает')}
+                      >
+                        Ожидает
+                      </button>
+                      <button
+                        type="button"
+                        className={`orders-filter-btn ${executorOrdersStatusFilter === 'Изготовка изделия' ? 'orders-filter-btn--active' : ''}`}
+                        onClick={() => setExecutorOrdersStatusFilter('Изготовка изделия')}
+                      >
+                        В работе
+                      </button>
+                      <button
+                        type="button"
+                        className={`orders-filter-btn ${executorOrdersStatusFilter === 'Готов' ? 'orders-filter-btn--active' : ''}`}
+                        onClick={() => setExecutorOrdersStatusFilter('Готов')}
+                      >
+                        Готов
+                      </button>
+                      <button
+                        type="button"
+                        className={`orders-filter-btn ${executorOrdersStatusFilter === 'Отказано' ? 'orders-filter-btn--active' : ''}`}
+                        onClick={() => setExecutorOrdersStatusFilter('Отказано')}
+                      >
+                        Отказано
+                      </button>
+                    </div>
+                  </div>
+
+                  {executorOrdersMessage && <p className="orders-message">{executorOrdersMessage}</p>}
+                  <div className="orders-list">
+                    {isExecutorOrdersLoading ? (
+                      <p className="orders-empty">Загрузка...</p>
+                    ) : filteredExecutorOrders.length === 0 ? (
+                      <p className="orders-empty">
+                        {executorOrdersStatusFilter === 'all' 
+                          ? 'Пока нет заказов клиентов.' 
+                          : `Нет заказов со статусом "${executorOrdersStatusFilter}".`}
+                      </p>
+                    ) : (
+                      filteredExecutorOrders.map((order) => {
+                        const isDirect = order.direct_executor_user_id &&
+                          Number(order.direct_executor_user_id) === Number(user?.id);
+                        const isAccepted = Number(order.accepted_executor_user_id) === Number(user?.id);
+                        // Есть ли чат с заказчиком по этому заказу
+                        const hasChat = chatThreads.some(
+                          t => Number(t.order_id) === Number(order.id) &&
+                               Number(t.peer_id) === Number(order.customer_user_id || order.user_id)
+                        );
+
+                        return (
+                          <article
+                            key={order.id}
+                            className={`orders-item ${isDirect ? 'orders-item--direct' : ''} ${order.status === 'Отказано' ? 'orders-item--declined' : ''}`}
+                          >
+                            <div className="orders-item__head">
+                              <div>
+                                <h3>{order.service}</h3>
+                                <p>
+                                  Заказчик:{' '}
+                                  <button type="button" className="profile-link-btn"
+                                    onClick={() => openUserProfile(order.customer_user_id || order.user_id)}>
+                                    {order.customer_name || 'Заказчик'}
+                                  </button>
+                                </p>
+                                <p>Срок: {order.deadline} · #{order.id}</p>
+                                {isDirect && (
+                                  <span className="orders-item__direct-tag">Прямой заказ</span>
+                                )}
+                              </div>
+                              <span className={`orders-status orders-status--${statusClassMap[order.status] || 'pending'}`}>
+                                {order.status}
+                              </span>
+                            </div>
+                            <p className="orders-item__details">{order.details}</p>
+                            <div className="orders-item__footer">
+                              <span>Бюджет: {Number(order.budget).toLocaleString()} тг</span>
+                              {order.file_name && <span>Файл: {order.file_name}</span>}
+                            </div>
+
+                            {/* ── Прямой заказ ── */}
+                            {isDirect && (
+                              <>
+                                {order.status === 'Отказано' ? (
+                                  <div className="orders-item__responses">
+                                    <span className="orders-item__direct-label">Вы отказали по этому заказу</span>
+                                    {order.decline_reason && (
+                                      <span className="orders-item__decline-reason">Причина: {order.decline_reason}</span>
+                                    )}
+                                  </div>
+                                ) : order.status === 'Готов' ? (
+                                  <div className="orders-item__responses">
+                                    <span className="orders-item__direct-label">Заказ завершён</span>
+                                  </div>
+                                ) : order.status === 'Изготовка изделия' ? (
+                                  <div className="orders-item__responses">
+                                    <span className="orders-item__direct-label">Вы приняли этот заказ</span>
+                                    <div className="orders-item__actions">
+                                      <button type="button" className="orders-view-btn orders-view-btn--chat"
+                                        onClick={() => { setTab('chats'); openChatWithResponder(order.id, order.customer_user_id || order.user_id, order.customer_name || 'Заказчик', order.status, order.user_id, order.accepted_executor_user_id); }}>
+                                        Написать заказчику
+                                      </button>
+                                      <button type="button" className="orders-view-btn"
+                                        onClick={() => openPreview(order.file_name, order.file_data)} disabled={!order.file_data}>
+                                        Открыть файл
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  /* Ожидает — принять / отказать */
+                                  <div className="orders-item__responses">
+                                    <div className="orders-item__actions">
+                                      <button type="button" className="orders-view-btn orders-view-btn--success"
+                                        onClick={() => executorAcceptOrder(order.id)}>
+                                        Принять заказ
+                                      </button>
+                                      <button type="button" className="orders-view-btn orders-view-btn--danger"
+                                        onClick={() => { setDeclineModal({ orderId: order.id }); setDeclineReason(''); setDeclineError(''); }}>
+                                        Отказать
+                                      </button>
+                                      <button type="button" className="orders-view-btn orders-view-btn--chat"
+                                        onClick={() => { setTab('chats'); openChatWithResponder(order.id, order.customer_user_id || order.user_id, order.customer_name || 'Заказчик', order.status, order.user_id, order.accepted_executor_user_id); }}>
+                                        Написать заказчику
+                                      </button>
+                                      <button type="button" className="orders-view-btn"
+                                        onClick={() => openPreview(order.file_name, order.file_data)} disabled={!order.file_data}>
+                                        Открыть файл
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </>
+                            )}
+
+                            {/* ── Откликнулся сам ── */}
+                            {!isDirect && (
+                              <div className="orders-item__responses">
+                                {isAccepted ? (
+                                  /* Заказчик принял этого исполнителя */
+                                  <div className="orders-item__actions">
+                                    <button type="button" className="orders-view-btn orders-view-btn--chat"
+                                      onClick={() => { setTab('chats'); openChatWithResponder(order.id, order.customer_user_id || order.user_id, order.customer_name || 'Заказчик', order.status, order.user_id, order.accepted_executor_user_id); }}>
+                                      Написать заказчику
+                                    </button>
+                                    <button type="button" className="orders-view-btn"
+                                      onClick={() => openPreview(order.file_name, order.file_data)} disabled={!order.file_data}>
+                                      Открыть файл
+                                    </button>
+                                  </div>
+                                ) : hasChat ? (
+                                  /* Заказчик написал первым — показываем чат */
+                                  <div className="orders-item__actions">
+                                    <button type="button" className="orders-view-btn orders-view-btn--chat"
+                                      onClick={() => { setTab('chats'); openChatWithResponder(order.id, order.customer_user_id || order.user_id, order.customer_name || 'Заказчик', order.status, order.user_id, order.accepted_executor_user_id); }}>
+                                      Открыть чат
+                                    </button>
+                                  </div>
+                                ) : (
+                                  /* Ожидает решения заказчика */
+                                  <span className="orders-item__waiting-label">
+                                    Вы откликнулись — ожидайте решения заказчика
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </article>
+                        );
+                      })
+                    )}
+                  </div>
+                </>
+              )}
             </section>
           )}
 
@@ -1605,6 +2139,41 @@ const Profile = () => {
                 )}
               </div>
 
+              {/* Фильтр по статусу заказа */}
+              <div className="orders-filter">
+                <span className="orders-filter__label">Статус заказа:</span>
+                <div className="orders-filter__buttons">
+                  <button
+                    type="button"
+                    className={`orders-filter-btn ${chatsStatusFilter === 'all' ? 'orders-filter-btn--active' : ''}`}
+                    onClick={() => setChatsStatusFilter('all')}
+                  >
+                    Все
+                  </button>
+                  <button
+                    type="button"
+                    className={`orders-filter-btn ${chatsStatusFilter === 'Ожидает' ? 'orders-filter-btn--active' : ''}`}
+                    onClick={() => setChatsStatusFilter('Ожидает')}
+                  >
+                    Ожидает
+                  </button>
+                  <button
+                    type="button"
+                    className={`orders-filter-btn ${chatsStatusFilter === 'Изготовка изделия' ? 'orders-filter-btn--active' : ''}`}
+                    onClick={() => setChatsStatusFilter('Изготовка изделия')}
+                  >
+                    В работе
+                  </button>
+                  <button
+                    type="button"
+                    className={`orders-filter-btn ${chatsStatusFilter === 'Готов' ? 'orders-filter-btn--active' : ''}`}
+                    onClick={() => setChatsStatusFilter('Готов')}
+                  >
+                    Готов
+                  </button>
+                </div>
+              </div>
+
               {threadsMessage && <p className="orders-message">{threadsMessage}</p>}
 
               <div className="chat-section">
@@ -1620,14 +2189,20 @@ const Profile = () => {
                           activeChat &&
                           Number(activeChat.orderId) === Number(thread.order_id) &&
                           Number(activeChat.peerId) === Number(thread.peer_id);
+                        const unread = Number(thread.unread_count) || 0;
                         return (
                           <article
                             key={`${thread.order_id}-${thread.peer_id}`}
-                            className={`orders-item ${isActiveThread ? 'orders-item--active' : ''}`}
+                            className={`orders-item chat-thread-item ${isActiveThread ? 'orders-item--active' : ''} ${unread > 0 && !isActiveThread ? 'chat-thread-item--unread' : ''}`}
                           >
                             <div className="orders-item__head">
                               <div>
-                                <h3>{thread.order_service}</h3>
+                                <h3>
+                                  {thread.order_service}
+                                  {unread > 0 && !isActiveThread && (
+                                    <span className="chat-unread-badge">{unread}</span>
+                                  )}
+                                </h3>
                                 <p>
                                   Собеседник:{' '}
                                   <button
@@ -1647,26 +2222,22 @@ const Profile = () => {
                             <p className="orders-item__details">Номер заказа: #{thread.order_id}</p>
                             <div className="orders-item__footer">
                               <span>{new Date(thread.last_time).toLocaleString()}</span>
-                              {isChatLockedForUser(thread.order_user_id, thread.accepted_executor_user_id) ? (
-                                <p className="orders-message">Заказчик выбрал другого исполнителя</p>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className={`orders-view-btn ${isActiveThread ? 'orders-view-btn--selected' : ''}`}
-                                  onClick={() =>
-                                    openChatWithResponder(
-                                      thread.order_id,
-                                      thread.peer_id,
-                                      thread.peer_name,
-                                      thread.order_status,
-                                      thread.order_user_id,
-                                      thread.accepted_executor_user_id,
-                                    )
-                                  }
-                                >
-                                  Открыть чат
-                                </button>
-                              )}
+                              <button
+                                type="button"
+                                className={`orders-view-btn ${isActiveThread ? 'orders-view-btn--selected' : ''}`}
+                                onClick={() =>
+                                  openChatWithResponder(
+                                    thread.order_id,
+                                    thread.peer_id,
+                                    thread.peer_name,
+                                    thread.order_status,
+                                    thread.order_user_id,
+                                    thread.accepted_executor_user_id,
+                                  )
+                                }
+                              >
+                                Открыть чат
+                              </button>
                             </div>
                           </article>
                         );
@@ -1695,9 +2266,6 @@ const Profile = () => {
                       </div>
 
                       {chatError && <p className="orders-message">{chatError}</p>}
-                      {isChatLockedForUser(activeChat.orderUserId, activeChat.acceptedExecutorUserId) && (
-                        <p className="orders-message">Заказчик выбрал другого исполнителя</p>
-                      )}
 
                       <div className="chat-layout">
                         <div className="chat-main">
@@ -1902,9 +2470,6 @@ const Profile = () => {
             </div>
 
             {chatError && <p className="orders-message">{chatError}</p>}
-            {isChatLockedForUser(activeChat.orderUserId, activeChat.acceptedExecutorUserId) && (
-              <p className="orders-message">Заказчик выбрал другого исполнителя</p>
-            )}
 
             <div className="chat-layout">
               <div className="chat-main">
@@ -2005,36 +2570,91 @@ const Profile = () => {
       {/* ===== МОДАЛ: ПРЕДПРОСМОТР ФАЙЛА ===== */}
       {previewFile.open && (
         <div
-          className={`order-modal ${previewFile.data.startsWith('data:image') ? 'order-modal--fullscreen' : ''}`}
+          className="lightbox-overlay"
           onClick={() => setPreviewFile({ open: false, name: '', data: '' })}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Просмотр файла"
         >
-          <div
-            className="order-modal__card order-modal__card--preview"
-            onClick={(event) => event.stopPropagation()}
+          {previewFile.name && (
+            <span className="lightbox-filename">{previewFile.name}</span>
+          )}
+          <button
+            className="lightbox-close"
+            onClick={() => setPreviewFile({ open: false, name: '', data: '' })}
+            aria-label="Закрыть"
           >
-            <div className="order-modal__header">
-              <h2>{previewFile.name || 'Файл'}</h2>
-              <button
-                type="button"
-                className="order-modal__close"
-                onClick={() => setPreviewFile({ open: false, name: '', data: '' })}
-              >
-                ×
-              </button>
+            ✕
+          </button>
+          {previewFile.data.startsWith('data:image') ? (
+            <img
+              className="lightbox-img"
+              src={previewFile.data}
+              alt={previewFile.name || 'Файл'}
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : previewFile.data.startsWith('data:application/pdf') ? (
+            <iframe
+              className="lightbox-pdf"
+              title="preview"
+              src={previewFile.data}
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <div className="lightbox-download" onClick={(e) => e.stopPropagation()}>
+              <p>Просмотр недоступен для этого типа файла.</p>
+              <a href={previewFile.data} download={previewFile.name || 'file'}>
+                ⬇ Скачать файл
+              </a>
             </div>
-            <div className="file-preview">
-              {previewFile.data.startsWith('data:image') ? (
-                <img src={previewFile.data} alt={previewFile.name || 'Файл'} />
-              ) : previewFile.data.startsWith('data:application/pdf') ? (
-                <iframe title="preview" src={previewFile.data} />
-              ) : (
-                <div className="file-preview__download">
-                  <p>Просмотр доступен только для изображений и PDF.</p>
-                  <a href={previewFile.data} download={previewFile.name || 'file'}>
-                    Скачать файл
-                  </a>
-                </div>
-              )}
+          )}
+        </div>
+      )}
+
+      {/* ===== МОДАЛ: ПРИЧИНА ОТКАЗА ===== */}
+      {declineModal && (
+        <div className="order-modal" onClick={() => setDeclineModal(null)}>
+          <div className="order-modal__card" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
+            <div className="order-modal__header">
+              <h2>Причина отказа</h2>
+              <button type="button" className="order-modal__close" onClick={() => setDeclineModal(null)}>×</button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <p style={{ fontSize: 14, color: '#475569' }}>
+                Укажите причину отказа — заказчик её увидит.
+              </p>
+              <textarea
+                rows={4}
+                placeholder="Например: не могу выполнить в указанные сроки..."
+                value={declineReason}
+                onChange={(e) => { setDeclineReason(e.target.value); setDeclineError(''); }}
+                style={{
+                  border: '1px solid #cbd5e1', borderRadius: 10, padding: '10px 12px',
+                  fontSize: 14, fontFamily: 'inherit', resize: 'vertical',
+                  outline: 'none', transition: 'border-color .2s',
+                }}
+                onFocus={(e) => { e.target.style.borderColor = '#f5bd30'; }}
+                onBlur={(e) => { e.target.style.borderColor = '#cbd5e1'; }}
+              />
+              {declineError && <p style={{ color: '#dc2626', fontSize: 13, margin: 0 }}>{declineError}</p>}
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="orders-view-btn"
+                  onClick={() => setDeclineModal(null)}
+                  style={{ background: '#e2e8f0', color: '#334155' }}
+                >
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  className="orders-view-btn orders-view-btn--danger"
+                  onClick={executorDeclineOrder}
+                  disabled={isDeclining}
+                >
+                  {isDeclining ? 'Отправка...' : 'Подтвердить отказ'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

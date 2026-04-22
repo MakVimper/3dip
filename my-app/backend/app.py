@@ -674,7 +674,7 @@ def update_executor():
 
 @app.get('/api/orders/executor')
 def list_executor_orders():
-    """... ..., ... ... ... ... ... ...."""
+    """Заказы исполнителя: прямые + те на которые откликнулся."""
     user_id = request.args.get('userId', '').strip()
 
     if not user_id.isdigit():
@@ -688,8 +688,9 @@ def list_executor_orders():
                     SELECT DISTINCT
                         o.id, o.user_id, o.service, o.details, o.budget, o.deadline,
                         o.file_name, o.file_data, o.status, o.accepted_executor_user_id,
-                        o.direct_executor_user_id, o.created_at,
+                        o.direct_executor_user_id, o.decline_reason, o.created_at,
                         cu.name AS customer_name,
+                        cu.id AS customer_user_id,
                         e.executor_type AS accepted_executor_type,
                         e.first_name AS accepted_executor_first_name,
                         e.last_name AS accepted_executor_last_name,
@@ -704,15 +705,17 @@ def list_executor_orders():
                             WHERE r.order_id = o.id AND r.executor_user_id = %s
                         )
                         OR o.accepted_executor_user_id = %s
+                        OR o.direct_executor_user_id = %s
                     )
                     AND o.user_id <> %s
                     AND (
                         o.accepted_executor_user_id IS NULL
                         OR o.accepted_executor_user_id = %s
+                        OR o.status = 'Отказано'
                     )
                     ORDER BY o.created_at DESC
                     ''',
-                    (int(user_id), int(user_id), int(user_id), int(user_id), int(user_id)),
+                    (int(user_id), int(user_id), int(user_id), int(user_id), int(user_id), int(user_id)),
                 )
                 orders = cur.fetchall()
 
@@ -803,6 +806,7 @@ def list_all_orders():
                         JOIN users u ON u.id = o.user_id
                         WHERE o.user_id <> %s
                           AND o.status NOT IN %s
+                          AND o.direct_executor_user_id IS NULL
                         ORDER BY o.created_at DESC
                         ''',
                         (int(exclude_user_id), int(exclude_user_id), hidden_statuses),
@@ -816,6 +820,7 @@ def list_all_orders():
                         FROM orders o
                         JOIN users u ON u.id = o.user_id
                         WHERE o.status NOT IN %s
+                          AND o.direct_executor_user_id IS NULL
                         ORDER BY o.created_at DESC
                         ''',
                         (hidden_statuses,),
@@ -918,6 +923,28 @@ def accept_order_executor():
                 if response_row is None:
                     return jsonify({'message': 'Response not found'}), 404
 
+                # Удаляем чаты с невыбранными исполнителями
+                cur.execute(
+                    '''
+                    DELETE FROM chat_messages
+                    WHERE order_id = %s
+                      AND (
+                        (sender_user_id = %s AND recipient_user_id != %s)
+                        OR (recipient_user_id = %s AND sender_user_id != %s)
+                      )
+                    ''',
+                    (int(order_id), int(user_id), int(executor_user_id), int(user_id), int(executor_user_id)),
+                )
+
+                # Удаляем отклики невыбранных исполнителей
+                cur.execute(
+                    '''
+                    DELETE FROM order_responses
+                    WHERE order_id = %s AND executor_user_id != %s
+                    ''',
+                    (int(order_id), int(executor_user_id)),
+                )
+
                 cur.execute(
                     '''
                     UPDATE orders
@@ -1005,6 +1032,46 @@ def delete_order(order_id):
         return jsonify({'message': 'Order deleted'}), 200
     except Exception as error:
         return jsonify({'message': f'Delete order failed: {str(error)}'}), 500
+
+@app.post('/api/orders/<int:order_id>/executor-accept')
+def executor_accept_order(order_id):
+    """Исполнитель принимает прямой заказ → статус Изготовка изделия."""
+    payload = request.get_json(silent=True) or {}
+    executor_user_id = payload.get('executorUserId')
+
+    if executor_user_id is None:
+        return jsonify({'message': 'executorUserId is required'}), 400
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    'SELECT id, user_id, direct_executor_user_id, status FROM orders WHERE id = %s',
+                    (int(order_id),),
+                )
+                order = cur.fetchone()
+
+                if not order:
+                    return jsonify({'message': 'Order not found'}), 404
+
+                if int(order.get('direct_executor_user_id') or 0) != int(executor_user_id):
+                    return jsonify({'message': 'Not allowed'}), 403
+
+                if order['status'] != 'Ожидает':
+                    return jsonify({'message': 'Only pending orders can be accepted'}), 400
+
+                cur.execute(
+                    """UPDATE orders
+                       SET status = 'Изготовка изделия',
+                           accepted_executor_user_id = %s
+                       WHERE id = %s""",
+                    (int(executor_user_id), int(order_id)),
+                )
+            conn.commit()
+
+        return jsonify({'ok': True}), 200
+    except Exception as error:
+        return jsonify({'message': f'Executor accept order failed: {str(error)}'}), 500
 
 @app.post('/api/orders/<int:order_id>/decline')
 def decline_order(order_id):
@@ -1475,9 +1542,15 @@ def list_chat_threads():
                     FROM latest l
                     JOIN users u ON u.id = l.peer_id
                     JOIN orders o ON o.id = l.order_id
+                    WHERE (
+                        o.accepted_executor_user_id IS NULL
+                        OR o.accepted_executor_user_id = %s
+                        OR o.accepted_executor_user_id = l.peer_id
+                        OR o.user_id = %s
+                    )
                     ORDER BY l.last_time DESC
                     ''',
-                    (int(user_id), int(user_id), int(user_id), int(user_id)),
+                    (int(user_id), int(user_id), int(user_id), int(user_id), int(user_id), int(user_id)),
                 )
                 threads = cur.fetchall()
 
