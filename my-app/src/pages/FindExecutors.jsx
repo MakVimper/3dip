@@ -274,6 +274,19 @@ const FindExecutors = () => {
                               ? executor.organization_name || 'Организация'
                               : 'Частный исполнитель'}
                           </span>
+                          <div className="fe-card__rating">
+                            {executor.review_count > 0 ? (
+                              <>
+                                <span className="fe-card__rating-stars">
+                                  {'★'.repeat(Math.round(executor.avg_rating))}{'☆'.repeat(5 - Math.round(executor.avg_rating))}
+                                </span>
+                                <span className="fe-card__rating-value">{executor.avg_rating.toFixed(1)}</span>
+                                <span className="fe-card__rating-count">({executor.review_count})</span>
+                              </>
+                            ) : (
+                              <span className="fe-card__rating-none">Нет отзывов</span>
+                            )}
+                          </div>
                           {executor.about && (
                             <p className="fe-card__about">{executor.about}</p>
                           )}

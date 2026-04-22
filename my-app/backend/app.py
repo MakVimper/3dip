@@ -437,10 +437,16 @@ def list_executors():
                         ec.services,
                         ec.company_avatar,
                         ec.price_range,
-                        ec.works
+                        ec.works,
+                        COALESCE(AVG(r.rating), 0) AS avg_rating,
+                        COUNT(r.id) AS review_count
                     FROM executors e
                     JOIN users u ON u.id = e.user_id
                     LEFT JOIN executor_cabinets ec ON ec.user_id = e.user_id
+                    LEFT JOIN reviews r ON r.target_user_id = e.user_id
+                    GROUP BY e.user_id, u.name, e.executor_type, e.first_name, e.last_name,
+                             e.organization_name, ec.about, ec.services, ec.company_avatar,
+                             ec.price_range, ec.works, e.created_at
                     ORDER BY e.created_at DESC
                     '''
                 )
@@ -487,7 +493,22 @@ def list_executors():
                 'company_avatar':    row.get('company_avatar') or '',
                 'price_range':       price_range,
                 'works':             json.loads(row['works']) if row.get('works') else [],
+                'avg_rating':        round(float(row.get('avg_rating') or 0), 1),
+                'review_count':      int(row.get('review_count') or 0),
             })
+
+        def sort_key(executor):
+            avg_rating   = executor.get('avg_rating', 0)
+            review_count = executor.get('review_count', 0)
+            services     = executor.get('services', [])
+            priced_count = sum(
+                1 for s in services
+                if isinstance(s, dict) and s.get('price') and str(s['price']).strip()
+            )
+            has_price = 1 if priced_count > 0 else 0
+            return (-avg_rating, -review_count, -has_price, -priced_count)
+
+        result.sort(key=sort_key)
 
         return jsonify({'executors': result}), 200
     except Exception as error:
