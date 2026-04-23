@@ -3,6 +3,13 @@ import Header from '../components/Header';
 import './Profile.css';
 import './ExecutorCabinet.css';
 
+import svcProto from '../assets/svgprof/prototip.png';
+import svc3d from '../assets/svgprof/3dmod.png';
+import svcProd from '../assets/svgprof/proizvodstva.png';
+import svcDetali from '../assets/svgprof/detali.png';
+import svcHiRes from '../assets/svgprof/visokotochsetal.png';
+import svcGabarit from '../assets/svgprof/gabarit.png';
+
 const goTo = (path) => {
   window.history.pushState({}, '', path);
   window.dispatchEvent(new Event('app:navigate'));
@@ -1330,12 +1337,12 @@ const Profile = () => {
                       </div>
                       <div className="svc-grid">
                         {[
-                          { name: 'Прототипирование изделий', icon: '🧩' },
-                          { name: '3D-моделирование с нуля', icon: '✏️' },
-                          { name: 'Мелкосерийное производство', icon: '🏭' },
-                          { name: 'Функциональные детали', icon: '⚙️' },
-                          { name: 'Печать высокоточных моделей', icon: '🎯' },
-                          { name: 'Крупногабаритная печать', icon: '📦' },
+                          { name: 'Прототипирование изделий', icon: svcProto },
+                          { name: '3D-моделирование с нуля', icon: svc3d },
+                          { name: 'Мелкосерийное производство', icon: svcProd },
+                          { name: 'Функциональные детали', icon: svcDetali },
+                          { name: 'Печать высокоточных моделей', icon: svcHiRes },
+                          { name: 'Крупногабаритная печать', icon: svcGabarit },
                         ].map(({ name, icon }) => {
                           const activeService = cabinetForm.services.find((s) => s.name === name);
                           const isActive = Boolean(activeService);
@@ -1348,7 +1355,9 @@ const Profile = () => {
                                   onChange={() => toggleCabinetService(name)}
                                   className="svc-chip__input"
                                 />
-                                <span className="svc-chip__icon">{icon}</span>
+                                <span className="svc-chip__icon">
+                                  <img src={icon} alt={name} className="svc-chip__icon-img" />
+                                </span>
                                 <span className="svc-chip__name">{name}</span>
                                 <span className="svc-chip__check">{isActive ? '✓' : ''}</span>
                               </label>

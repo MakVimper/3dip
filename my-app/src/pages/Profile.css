@@ -516,9 +516,23 @@
 }
 
 .svc-chip__icon {
-  font-size: 20px;
+  width: 28px;
+  height: 28px;
   flex-shrink: 0;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.svc-chip__icon-img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  transition: filter 0.18s ease;
+}
+
+.svc-chip--on .svc-chip__icon-img {
+  filter: brightness(0) saturate(100%) invert(27%) sepia(72%) saturate(1200%) hue-rotate(10deg) brightness(95%);
 }
 
 .svc-chip__name {
