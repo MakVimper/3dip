@@ -1559,7 +1559,11 @@ const Profile = () => {
                         <div key={review.id} className="review-item">
                           <div className="review-item__head">
                             <span className="review-item__name">{review.reviewer_name || 'Пользователь'}</span>
-                            <span className="review-item__rating">Оценка: {review.rating}/5</span>
+                            <span className="review-item__rating">
+                              {[1,2,3,4,5].map((s) => (
+                                <span key={s} className={s <= Number(review.rating) ? 'review-item__star--filled' : 'review-item__star--empty'}>★</span>
+                              ))}
+                            </span>
                           </div>
                           <p className="review-item__text">{review.text}</p>
                           <span className="review-item__date">
