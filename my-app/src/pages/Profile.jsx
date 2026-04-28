@@ -3,6 +3,7 @@ import Header from '../components/Header';
 import './Profile.css';
 import './ExecutorCabinet.css';
 import { showToast } from '../components/Toast';
+import ConfirmModal from '../components/ConfirmModal';
 
 import svcProto from '../assets/svgprof/prototip.png';
 import svc3d from '../assets/svgprof/3dmod.png';
@@ -153,6 +154,9 @@ const Profile = () => {
   const [declineReason, setDeclineReason] = useState('');
   const [isDeclining, setIsDeclining] = useState(false);
   const [declineError, setDeclineError] = useState('');
+
+  // Модалка подтверждения
+  const [confirmModal, setConfirmModal] = useState(null); // { title, message, onConfirm, danger }
 
   // Фильтры
   const [ordersStatusFilter, setOrdersStatusFilter] = useState('all'); // 'all' | 'Ожидает' | 'Изготовка изделия' | 'Готов' | 'Отказано'
@@ -472,60 +476,55 @@ const Profile = () => {
 
   const acceptExecutorForOrder = async (orderId, executorUserId) => {
     if (!user?.id) return;
-
-    const shouldAccept = window.confirm('Точно принять работу этого исполнителя?');
-    if (!shouldAccept) return;
-
-    try {
-      const response = await fetch('/api/orders/accept', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderId,
-          userId: user.id,
-          executorUserId,
-        }),
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || `Ошибка принятия (HTTP ${response.status})`);
-      }
-
-      await loadOrders();
-      setResponsesModal({ open: false, orderId: null, orderTitle: '', orderStatus: '' });
-      showToast('Исполнитель принят', 'success');
-    } catch (error) {
-      showToast(error.message || 'Ошибка принятия', 'error');
-    }
+    setConfirmModal({
+      title: 'Принять исполнителя?',
+      message: 'Остальные отклики будут удалены.',
+      confirmText: 'Принять',
+      danger: false,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        try {
+          const response = await fetch('/api/orders/accept', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId, userId: user.id, executorUserId }),
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.message || `Ошибка принятия (HTTP ${response.status})`);
+          await loadOrders();
+          setResponsesModal({ open: false, orderId: null, orderTitle: '', orderStatus: '' });
+          showToast('Исполнитель принят', 'success');
+        } catch (error) {
+          showToast(error.message || 'Ошибка принятия', 'error');
+        }
+      },
+    });
   };
 
   const completeOrder = async (orderId) => {
     if (!user?.id) return;
-
-    const shouldConfirm = window.confirm('Точно подтвердить выполнение заказа?');
-    if (!shouldConfirm) return;
-
-    try {
-      const response = await fetch('/api/orders/complete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderId,
-          userId: user.id,
-        }),
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || `Ошибка подтверждения (HTTP ${response.status})`);
-      }
-
-      await loadOrders();
-      showToast('Выполнение заказа подтверждено', 'success');
-    } catch (error) {
-      showToast(error.message || 'Ошибка подтверждения', 'error');
-    }
+    setConfirmModal({
+      title: 'Подтвердить выполнение?',
+      message: 'Заказ будет отмечен как выполненный.',
+      confirmText: 'Подтвердить',
+      danger: false,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        try {
+          const response = await fetch('/api/orders/complete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId, userId: user.id }),
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.message || `Ошибка подтверждения (HTTP ${response.status})`);
+          await loadOrders();
+          showToast('Выполнение заказа подтверждено', 'success');
+        } catch (error) {
+          showToast(error.message || 'Ошибка подтверждения', 'error');
+        }
+      },
+    });
   };
 
   const openChatWithResponder = async (
@@ -622,24 +621,24 @@ const Profile = () => {
 
   const deleteOrder = async (orderId) => {
     if (!user?.id) return;
-    const shouldDelete = window.confirm('Точно удалить этот заказ? Это действие нельзя отменить.');
-    if (!shouldDelete) return;
-
-    try {
-      const response = await fetch(`/api/orders/${orderId}?userId=${user.id}`, {
-        method: 'DELETE',
-      });
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(data.message || `Ошибка удаления (HTTP ${response.status})`);
-      }
-
-      await loadOrders();
-      showToast('Заказ удалён', 'success');
-    } catch (error) {
-      showToast(error.message || 'Ошибка удаления заказа', 'error');
-    }
+    setConfirmModal({
+      title: 'Удалить заказ?',
+      message: 'Это действие нельзя отменить.',
+      confirmText: 'Удалить',
+      danger: true,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        try {
+          const response = await fetch(`/api/orders/${orderId}?userId=${user.id}`, { method: 'DELETE' });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(data.message || `Ошибка удаления (HTTP ${response.status})`);
+          await loadOrders();
+          showToast('Заказ удалён', 'success');
+        } catch (error) {
+          showToast(error.message || 'Ошибка удаления заказа', 'error');
+        }
+      },
+    });
   };
 
   const scrollChatsToBottom = () => {
@@ -790,11 +789,18 @@ const Profile = () => {
   };
 
   const handleLogout = () => {
-    const shouldLogout = window.confirm('Вы точно хотите выйти с аккаунта?');
-    if (!shouldLogout) return;
-    localStorage.removeItem('auth_user');
-    window.dispatchEvent(new Event('auth:changed'));
-    goTo('/');
+    setConfirmModal({
+      title: 'Выйти из аккаунта?',
+      message: 'Вы будете перенаправлены на главную страницу.',
+      confirmText: 'Выйти',
+      danger: true,
+      onConfirm: () => {
+        setConfirmModal(null);
+        localStorage.removeItem('auth_user');
+        window.dispatchEvent(new Event('auth:changed'));
+        goTo('/');
+      },
+    });
   };
 
   const onFormChange = (event) => {
@@ -2811,6 +2817,16 @@ const Profile = () => {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={!!confirmModal}
+        title={confirmModal?.title}
+        message={confirmModal?.message}
+        confirmText={confirmModal?.confirmText}
+        danger={confirmModal?.danger}
+        onConfirm={confirmModal?.onConfirm}
+        onCancel={() => setConfirmModal(null)}
+      />
     </div>
   );
 };
