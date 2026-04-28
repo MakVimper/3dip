@@ -142,8 +142,11 @@ const Header = () => {
       setSelectedFileName('Файл не выбран (необязательно)');
       setSelectedFileData('');
       setIsOrderMenuOpen(false);
+      showToast('Заказ создан', 'success');
     } catch (error) {
-      window.alert(error.message || 'Ошибка создания заказа');
+      showToast(error.message || 'Ошибка создания заказа', 'error');
+    } finally {
+      setIsOrderSubmitting(false);
     }
   };
 

@@ -139,8 +139,10 @@ const Orders = () => {
       setSelectedFileData('');
       setIsCreateOpen(false);
       await loadOrders();
+      showToast('Заказ создан', 'success');
     } catch (error) {
       setMessage(error.message || 'Ошибка создания заказа');
+      showToast(error.message || 'Ошибка создания заказа', 'error');
     } finally {
       setIsSubmitting(false);
     }

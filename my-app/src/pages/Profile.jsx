@@ -158,6 +158,9 @@ const Profile = () => {
   // Модалка подтверждения
   const [confirmModal, setConfirmModal] = useState(null); // { title, message, onConfirm, danger }
 
+  // Модалка просмотра причины отказа
+  const [declineReasonModal, setDeclineReasonModal] = useState(null); // { reason }
+
   // Фильтры
   const [ordersStatusFilter, setOrdersStatusFilter] = useState('all'); // 'all' | 'Ожидает' | 'Изготовка изделия' | 'Готов' | 'Отказано'
   const [chatsStatusFilter, setChatsStatusFilter] = useState('all'); // 'all' | 'Ожидает' | 'Изготовка изделия' | 'Готов'
@@ -1088,6 +1091,7 @@ const Profile = () => {
       setSelectedFileName('Файл не выбран (необязательно)');
       setSelectedFileData('');
       setIsOrderModalOpen(false);
+      showToast('Заказ создан', 'success');
       await loadOrders();
     } catch (error) {
       setOrdersMessage(error.message || 'Ошибка создания заказа');
@@ -1751,7 +1755,7 @@ const Profile = () => {
                                   <button
                                     type="button"
                                     className="orders-view-btn orders-view-btn--declined-reason"
-                                    onClick={() => window.alert(`Причина отказа:\n\n${order.decline_reason}`)}
+                                    onClick={() => setDeclineReasonModal({ reason: order.decline_reason })}
                                   >
                                     Причина отказа
                                   </button>
@@ -1961,8 +1965,18 @@ const Profile = () => {
                         return (
                           <article
                             key={order.id}
-                            className={`orders-item ${isDirect ? 'orders-item--direct' : ''} ${order.status === 'Отказано' ? 'orders-item--declined' : ''}`}
+                            className={`orders-item ${isDirect ? 'orders-item--direct' : (!isDirect && !isAccepted ? 'orders-item--responded' : '')} ${order.status === 'Отказано' ? 'orders-item--declined' : ''}`}
                           >
+                            {isDirect && (
+                              <div className="orders-item__direct-banner">
+                                <span>→ Прямой заказ — вас выбрали как исполнителя</span>
+                              </div>
+                            )}
+                            {!isDirect && (
+                              <div className="orders-item__responded-banner">
+                                <span>↩ Вы откликнулись на этот заказ</span>
+                              </div>
+                            )}
                             <div className="orders-item__head">
                               <div>
                                 <h3>{order.service} <span style={{fontSize:'13px',fontWeight:500,color:'#64748b'}}>#{order.id}</span></h3>
@@ -1995,18 +2009,24 @@ const Profile = () => {
                               <>
                                 {order.status === 'Отказано' ? (
                                   <div className="orders-item__responses">
-                                    <span className="orders-item__direct-label">Вы отказали по этому заказу</span>
                                     {order.decline_reason && (
-                                      <span className="orders-item__decline-reason">Причина: {order.decline_reason}</span>
+                                      <div className="orders-item__actions">
+                                        <button
+                                          type="button"
+                                          className="orders-view-btn orders-view-btn--declined-reason"
+                                          onClick={() => setDeclineReasonModal({ reason: order.decline_reason })}
+                                        >
+                                          Причина отказа
+                                        </button>
+                                      </div>
                                     )}
                                   </div>
                                 ) : order.status === 'Готов' ? (
                                   <div className="orders-item__responses">
-                                    <span className="orders-item__direct-label">Заказ завершён</span>
+                                    <div className="orders-item__actions" />
                                   </div>
                                 ) : order.status === 'Изготовка изделия' ? (
                                   <div className="orders-item__responses">
-                                    <span className="orders-item__direct-label">Вы приняли этот заказ</span>
                                     <div className="orders-item__actions">
                                       <button type="button" className="orders-view-btn orders-view-btn--chat"
                                         onClick={() => { setTab('chats'); openChatWithResponder(order.id, order.customer_user_id || order.user_id, order.customer_name || 'Заказчик', order.status, order.user_id, order.accepted_executor_user_id); }}>
@@ -2827,6 +2847,24 @@ const Profile = () => {
         onConfirm={confirmModal?.onConfirm}
         onCancel={() => setConfirmModal(null)}
       />
+
+      {/* Модалка просмотра причины отказа */}
+      {declineReasonModal && (
+        <div className="confirm-overlay" onClick={() => setDeclineReasonModal(null)}>
+          <div className="confirm-card" onClick={(e) => e.stopPropagation()}>
+            <div className="confirm-card__icon">❌</div>
+            <h3 className="confirm-card__title">Причина отказа</h3>
+            <p className="confirm-card__message" style={{ color: '#dc2626', lineHeight: 1.6 }}>
+              {declineReasonModal.reason}
+            </p>
+            <div className="confirm-card__actions">
+              <button type="button" className="confirm-btn confirm-btn--cancel" style={{ flex: 'none', width: '100%' }} onClick={() => setDeclineReasonModal(null)}>
+                Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
