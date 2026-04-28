@@ -1,5 +1,6 @@
 ﻿import { useState } from 'react';
 import './Auth.css';
+import { showToast } from '../components/Toast';
 
 const goTo = (path) => {
   window.history.pushState({}, '', path);
@@ -42,7 +43,8 @@ const Register = () => {
 
     if (form.password !== form.repeatPassword) {
       setIsError(true);
-      setMessage('Passwords do not match');
+      setMessage('Пароли не совпадают');
+      showToast('Пароли не совпадают', 'error');
       return;
     }
 
@@ -66,14 +68,16 @@ const Register = () => {
       }
 
       setIsError(false);
-      setMessage('Registration successful. You can now login.');
+      setMessage('');
       setForm({ name: '', email: '', password: '', repeatPassword: '' });
+      showToast('Регистрация успешна! Войдите в аккаунт.', 'success');
       setTimeout(() => {
         goTo('/login');
       }, 300);
     } catch (error) {
       setIsError(true);
       setMessage(error.message || 'Ошибка регистрации');
+      showToast(error.message || 'Ошибка регистрации', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -151,12 +155,6 @@ const Register = () => {
               required
             />
           </div>
-
-          {message && (
-            <p className={`auth-message ${isError ? 'auth-message--error' : 'auth-message--success'}`}>
-              {message}
-            </p>
-          )}
 
           <button type="submit" className="auth-submit" disabled={isLoading}>
             {isLoading ? 'Отправка...' : 'Зарегистрироваться'}

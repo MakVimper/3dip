@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Header from '../components/Header';
 import './FindExecutors.css';
+import { showToast } from '../components/Toast';
 
 const goTo = (path) => {
   window.history.pushState({}, '', path);
@@ -55,8 +56,8 @@ const FindExecutors = () => {
   const [orderModal, setOrderModal] = useState(null);
   const [orderForm, setOrderForm] = useState({ service: '', details: '', budget: '', deadline: '' });
   const [orderErrors, setOrderErrors] = useState({});
-  const [orderMessage, setOrderMessage] = useState('');
   const [isOrderSending, setIsOrderSending] = useState(false);
+  const [orderSubmitted, setOrderSubmitted] = useState(false);
   const [orderFileName, setOrderFileName] = useState('');
   const [orderFileData, setOrderFileData] = useState('');
 
@@ -115,9 +116,9 @@ const FindExecutors = () => {
     setOrderModal({ executor });
     setOrderForm({ service: '', details: '', budget: '', deadline: '' });
     setOrderErrors({});
-    setOrderMessage('');
     setOrderFileName('');
     setOrderFileData('');
+    setOrderSubmitted(false);
   };
 
   const submitOrder = async (e) => {
@@ -130,8 +131,9 @@ const FindExecutors = () => {
     setOrderErrors(errors);
     if (Object.keys(errors).length > 0) return;
 
+    // Блокируем кнопку только после успешной валидации
+    setOrderSubmitted(true);
     setIsOrderSending(true);
-    setOrderMessage('');
     try {
       const response = await fetch('/api/orders', {
         method: 'POST',
@@ -149,10 +151,11 @@ const FindExecutors = () => {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Ошибка создания заказа');
-      setOrderMessage('Заказ успешно создан!');
-      setTimeout(() => setOrderModal(null), 1500);
+      showToast('Заказ успешно создан!', 'success');
+      setTimeout(() => setOrderModal(null), 500);
     } catch (err) {
-      setOrderMessage(err.message || 'Ошибка');
+      showToast(err.message || 'Ошибка создания заказа', 'error');
+      setOrderSubmitted(false);
     } finally {
       setIsOrderSending(false);
     }
@@ -302,11 +305,16 @@ const FindExecutors = () => {
                       {}
                       {works.length > 0 && (
                         <div className="fe-card__works-strip">
-                          {works.map((work, i) => (
+                          {works.slice(0, 6).map((work, i) => (
                             <div key={i} className="fe-card__work-thumb">
                               <img src={work.data} alt={work.name || 'Работа'} />
                             </div>
                           ))}
+                          {works.length > 6 && (
+                            <div className="fe-card__work-thumb fe-card__work-thumb--more">
+                              +{works.length - 6}
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -460,13 +468,11 @@ const FindExecutors = () => {
                 </label>
               </div>
 
-              {orderMessage && (
-                <p style={{ color: orderMessage.includes('успешно') ? '#166534' : '#b91c1c', fontSize: 14 }}>
-                  {orderMessage}
-                </p>
-              )}
-
-              <button type="submit" className="order-form__submit" disabled={isOrderSending}>
+              <button
+                type="submit"
+                className="order-form__submit"
+                disabled={isOrderSending || orderSubmitted}
+              >
                 {isOrderSending ? 'Отправка...' : 'Создать заказ'}
               </button>
             </form>

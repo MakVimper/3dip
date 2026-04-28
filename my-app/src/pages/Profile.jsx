@@ -2,6 +2,7 @@
 import Header from '../components/Header';
 import './Profile.css';
 import './ExecutorCabinet.css';
+import { showToast } from '../components/Toast';
 
 import svcProto from '../assets/svgprof/prototip.png';
 import svc3d from '../assets/svgprof/3dmod.png';
@@ -301,8 +302,9 @@ const Profile = () => {
       }
 
       setExecutor(data.executor || null);
-      setExecutorFormMessage('Профиль исполнителя сохранен успешно.');
+      setExecutorFormMessage('');
       setIsExecutorFormError(false);
+      showToast('Профиль исполнителя сохранён', 'success');
       return true;
     } catch (error) {
       setExecutorFormMessage(error.message || 'Ошибка сохранения профиля исполнителя');
@@ -492,8 +494,9 @@ const Profile = () => {
 
       await loadOrders();
       setResponsesModal({ open: false, orderId: null, orderTitle: '', orderStatus: '' });
+      showToast('Исполнитель принят', 'success');
     } catch (error) {
-      setResponsesMessage(error.message || 'Ошибка принятия');
+      showToast(error.message || 'Ошибка принятия', 'error');
     }
   };
 
@@ -519,8 +522,9 @@ const Profile = () => {
       }
 
       await loadOrders();
+      showToast('Выполнение заказа подтверждено', 'success');
     } catch (error) {
-      setOrdersMessage(error.message || 'Ошибка подтверждения');
+      showToast(error.message || 'Ошибка подтверждения', 'error');
     }
   };
 
@@ -632,8 +636,9 @@ const Profile = () => {
       }
 
       await loadOrders();
+      showToast('Заказ удалён', 'success');
     } catch (error) {
-      setOrdersMessage(error.message || 'Ошибка удаления заказа');
+      showToast(error.message || 'Ошибка удаления заказа', 'error');
     }
   };
 
@@ -809,6 +814,7 @@ const Profile = () => {
     if (file.size > 1024 * 1024) {
       setIsError(true);
       setMessage('Файл слишком большой. До 1 МБ.');
+      showToast('Файл слишком большой. До 1 МБ.', 'error');
       return;
     }
 
@@ -854,6 +860,7 @@ const Profile = () => {
     if (file.size > 2 * 1024 * 1024) {
       setIsCabinetError(true);
       setCabinetMessage('Файл слишком большой. До 2 МБ.');
+      showToast('Файл слишком большой. До 2 МБ.', 'error');
       return;
     }
 
@@ -952,10 +959,12 @@ const Profile = () => {
         });
       }
 
-      setCabinetMessage('Рабочий кабинет сохранен.');
+      setCabinetMessage('');
+      showToast('Рабочий кабинет сохранён', 'success');
     } catch (error) {
       setIsCabinetError(true);
       setCabinetMessage(error.message || 'Ошибка сохранения кабинета.');
+      showToast(error.message || 'Ошибка сохранения кабинета', 'error');
     }
   };
 
@@ -986,10 +995,12 @@ const Profile = () => {
         JSON.stringify({ id: data.user.id, name: data.user.name, email: data.user.email }),
       );
       window.dispatchEvent(new Event('auth:changed'));
-      setMessage('Профиль обновлен.');
+      setMessage('');
+      showToast('Профиль обновлён', 'success');
     } catch (error) {
       setIsError(true);
       setMessage(error.message || 'Ошибка сохранения');
+      showToast(error.message || 'Ошибка сохранения профиля', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -1014,10 +1025,12 @@ const Profile = () => {
       }
 
       setPasswordForm({ currentPassword: '', newPassword: '' });
-      setPasswordMessage('Пароль успешно обновлен.');
+      setPasswordMessage('');
+      showToast('Пароль успешно обновлён', 'success');
     } catch (error) {
       setIsPasswordError(true);
       setPasswordMessage(error.message || 'Ошибка смены пароля');
+      showToast(error.message || 'Ошибка смены пароля', 'error');
     } finally {
       setIsPasswordLoading(false);
     }

@@ -1,5 +1,6 @@
 ﻿import { useState } from 'react';
 import './Auth.css';
+import { showToast } from '../components/Toast';
 
 const goTo = (path) => {
   window.history.pushState({}, '', path);
@@ -61,8 +62,9 @@ const Login = () => {
       window.dispatchEvent(new Event('auth:changed'));
 
       setIsError(false);
-      setMessage(`Welcome, ${data.user.name}`);
+      setMessage('');
       setForm({ email: '', password: '' });
+      showToast(`Добро пожаловать, ${data.user.name}!`, 'success');
 
       setTimeout(() => {
         goTo('/');
@@ -72,8 +74,10 @@ const Login = () => {
 
       if (error.name === 'AbortError') {
         setMessage('Сервер долго не отвечает. Проверьте backend и PostgreSQL.');
+        showToast('Сервер долго не отвечает', 'error');
       } else {
         setMessage(error.message || 'Ошибка входа');
+        showToast(error.message || 'Ошибка входа', 'error');
       }
     } finally {
       clearTimeout(timeoutId);
@@ -125,12 +129,6 @@ const Login = () => {
               required
             />
           </div>
-
-          {message && (
-            <p className={`auth-message ${isError ? 'auth-message--error' : 'auth-message--success'}`}>
-              {message}
-            </p>
-          )}
 
           <button type="submit" className="auth-submit" disabled={isLoading}>
             {isLoading ? 'Проверка...' : 'Войти'}

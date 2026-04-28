@@ -3665,3 +3665,35 @@ select.editor-input {
   .uprofile-gallery__thumb { width: 56px; height: 56px; flex-shrink: 0; }
   .uprofile-info__name { font-size: 20px; }
 }
+
+/* ── Заглушка "не исполнитель" ── */
+.uprofile-not-executor {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 60px 40px;
+  text-align: center;
+  box-shadow: 0 4px 24px rgba(15, 23, 42, 0.08);
+}
+
+.uprofile-not-executor__icon {
+  font-size: 48px;
+  line-height: 1;
+}
+
+.uprofile-not-executor h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.uprofile-not-executor p {
+  margin: 0;
+  font-size: 15px;
+  color: #64748b;
+}

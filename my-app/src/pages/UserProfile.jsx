@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Header from '../components/Header';
 import './Profile.css';
+import { showToast } from '../components/Toast';
 
 const goTo = (path) => {
   window.history.pushState({}, '', path);
@@ -43,8 +44,8 @@ const UserProfile = () => {
   const [orderModal, setOrderModal] = useState(false);
   const [orderForm, setOrderForm] = useState({ service: '', details: '', budget: '', deadline: '' });
   const [orderErrors, setOrderErrors] = useState({});
-  const [orderMessage, setOrderMessage] = useState('');
   const [isOrderSending, setIsOrderSending] = useState(false);
+  const [orderSubmitted, setOrderSubmitted] = useState(false);
   const [orderFileName, setOrderFileName] = useState('');
   const [orderFileData, setOrderFileData] = useState('');
 
@@ -65,7 +66,7 @@ const UserProfile = () => {
     if (Object.keys(errors).length > 0) return;
 
     setIsOrderSending(true);
-    setOrderMessage('');
+    setOrderSubmitted(true);
     try {
       const response = await fetch('/api/orders', {
         method: 'POST',
@@ -83,16 +84,16 @@ const UserProfile = () => {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Ошибка создания заказа');
-      setOrderMessage('Заказ успешно создан!');
+      showToast('Заказ успешно создан!', 'success');
       setTimeout(() => {
         setOrderModal(false);
         setOrderForm({ service: '', details: '', budget: '', deadline: '' });
         setOrderFileName('');
         setOrderFileData('');
-        setOrderMessage('');
-      }, 1500);
+      }, 500);
     } catch (err) {
-      setOrderMessage(err.message || 'Ошибка');
+      showToast(err.message || 'Ошибка создания заказа', 'error');
+      setOrderSubmitted(false);
     } finally {
       setIsOrderSending(false);
     }
@@ -218,6 +219,16 @@ const UserProfile = () => {
 
         {isLoading ? (
           <p className="orders-empty">Загрузка профиля...</p>
+        ) : user && !executor ? (
+          <div className="uprofile-not-executor">
+            <div className="uprofile-not-executor__icon">🔒</div>
+            <h2>Профиль недоступен</h2>
+            <p>Этот пользователь не является исполнителем.</p>
+            <button type="button" className="uprofile-nav__back"
+              onClick={() => window.history.length > 1 ? window.history.back() : goTo('/find-executors')}>
+              ← Вернуться назад
+            </button>
+          </div>
         ) : user ? (
           <>
             {/* ══ Основной блок: галерея + инфо ══ */}
@@ -316,9 +327,9 @@ const UserProfile = () => {
                           setOrderModal(true);
                           setOrderForm({ service: '', details: '', budget: '', deadline: '' });
                           setOrderErrors({});
-                          setOrderMessage('');
                           setOrderFileName('');
                           setOrderFileData('');
+                          setOrderSubmitted(false);
                         }}>
                         Сделать заказ
                       </button>
@@ -559,12 +570,7 @@ const UserProfile = () => {
                   {orderErrors.deadline && <p className="order-form__error">{orderErrors.deadline}</p>}
                 </label>
               </div>
-              {orderMessage && (
-                <p style={{ color: orderMessage.includes('успешно') ? '#166534' : '#b91c1c', fontSize: 14 }}>
-                  {orderMessage}
-                </p>
-              )}
-              <button type="submit" className="order-form__submit" disabled={isOrderSending}>
+              <button type="submit" className="order-form__submit" disabled={isOrderSending || orderSubmitted}>
                 {isOrderSending ? 'Отправка...' : 'Создать заказ'}
               </button>
             </form>
