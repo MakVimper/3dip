@@ -3268,9 +3268,13 @@ select.editor-input {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 520px;
+  height: 700px;
   overflow-y: auto;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+}
+
+.uprofile-gallery__thumbs::-webkit-scrollbar {
+  display: none;
 }
 
 .uprofile-gallery__thumb {
@@ -3305,7 +3309,7 @@ select.editor-input {
   border-radius: 14px;
   overflow: hidden;
   background: #f1f5f9;
-  height: 650px;
+  height: 700px;
 }
 
 .uprofile-gallery__img {

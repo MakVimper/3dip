@@ -78,6 +78,7 @@ const Profile = () => {
   const [isOrdersLoading, setIsOrdersLoading] = useState(false);
   const [ordersMessage, setOrdersMessage] = useState('');
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+  const [isOrderSubmitting, setIsOrderSubmitting] = useState(false);
   const [selectedFileName, setSelectedFileName] = useState('Файл не выбран (необязательно)');
   const [selectedFileData, setSelectedFileData] = useState('');
   const [orderForm, setOrderForm] = useState({
@@ -1037,7 +1038,9 @@ const Profile = () => {
     setOrderErrors(errors);
     if (Object.keys(errors).length > 0) return;
     if (!user?.id) return;
+    if (isOrderSubmitting) return;
 
+    setIsOrderSubmitting(true);
     try {
       const response = await fetch('/api/orders', {
         method: 'POST',
@@ -1069,6 +1072,8 @@ const Profile = () => {
       await loadOrders();
     } catch (error) {
       setOrdersMessage(error.message || 'Ошибка создания заказа');
+    } finally {
+      setIsOrderSubmitting(false);
     }
   };
 
@@ -2786,8 +2791,8 @@ const Profile = () => {
                 </label>
               </div>
 
-              <button type="submit" className="order-form__submit">
-                Опубликовать заказ
+              <button type="submit" className="order-form__submit" disabled={isOrderSubmitting}>
+                {isOrderSubmitting ? 'Отправка...' : 'Опубликовать заказ'}
               </button>
             </form>
           </div>

@@ -532,7 +532,7 @@ const UserProfile = () => {
                       reader.onload = () => setOrderFileData(typeof reader.result === 'string' ? reader.result : '');
                       reader.readAsDataURL(file);
                     }} />
-                  <label htmlFor="uprofile-order-file" className="order-file__button">📎 Выберите файл</label>
+                  <label htmlFor="uprofile-order-file" className="order-file__button">Выберите файл</label>
                   <p className="order-file__name">{orderFileName || 'Файл не выбран (необязательно)'}</p>
                 </div>
                 {orderFileData && orderFileName && /\.(jpg|jpeg|png|gif|webp)$/i.test(orderFileName) && (

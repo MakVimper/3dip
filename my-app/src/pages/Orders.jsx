@@ -49,6 +49,7 @@ const Orders = () => {
   const [orderErrors, setOrderErrors] = useState({});
   const [orders, setOrders] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
@@ -103,15 +104,11 @@ const Orders = () => {
     event.preventDefault();
     const errors = validateOrderForm();
     setOrderErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+    if (!user?.id) return;
+    if (isSubmitting) return;
 
-    if (Object.keys(errors).length > 0) {
-      return;
-    }
-
-    if (!user?.id) {
-      return;
-    }
-
+    setIsSubmitting(true);
     try {
       const response = await fetch('/api/orders', {
         method: 'POST',
@@ -143,6 +140,8 @@ const Orders = () => {
       await loadOrders();
     } catch (error) {
       setMessage(error.message || 'Ошибка создания заказа');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -278,8 +277,8 @@ const Orders = () => {
                     </label>
                   </div>
 
-                  <button type="submit" className="order-form__submit">
-                    Опубликовать заказ
+                  <button type="submit" className="order-form__submit" disabled={isSubmitting}>
+                    {isSubmitting ? 'Отправка...' : 'Опубликовать заказ'}
                   </button>
                 </form>
               </div>
