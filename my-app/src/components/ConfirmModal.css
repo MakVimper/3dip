@@ -107,3 +107,15 @@
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(220, 38, 38, 0.35);
 }
+
+.confirm-btn--success {
+  background: #22c55e;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.25);
+}
+
+.confirm-btn--success:hover {
+  background: #16a34a;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(34, 197, 94, 0.35);
+}

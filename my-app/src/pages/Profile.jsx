@@ -511,6 +511,7 @@ const Profile = () => {
       message: 'Заказ будет отмечен как выполненный.',
       confirmText: 'Подтвердить',
       danger: false,
+      success: true,
       onConfirm: async () => {
         setConfirmModal(null);
         try {
@@ -1781,7 +1782,7 @@ const Profile = () => {
                               <div className="orders-item__actions">
                                 <button
                                   type="button"
-                                  className="orders-view-btn"
+                                  className="orders-view-btn orders-view-btn--success"
                                   onClick={() => completeOrder(order.id)}
                                 >
                                   Подтвердить работу
@@ -2844,6 +2845,7 @@ const Profile = () => {
         message={confirmModal?.message}
         confirmText={confirmModal?.confirmText}
         danger={confirmModal?.danger}
+        success={confirmModal?.success}
         onConfirm={confirmModal?.onConfirm}
         onCancel={() => setConfirmModal(null)}
       />
