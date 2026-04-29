@@ -720,6 +720,21 @@ def update_executor():
     except Exception as error:
         return jsonify({'message': f'Executor update failed: {str(error)}'}), 500
 
+
+@app.delete('/api/executors')
+def delete_executor():
+    user_id = request.args.get('userId', '').strip()
+    if not user_id.isdigit():
+        return jsonify({'message': 'userId is required'}), 400
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute('DELETE FROM executors WHERE user_id = %s', (int(user_id),))
+            conn.commit()
+        return jsonify({'ok': True}), 200
+    except Exception as error:
+        return jsonify({'message': f'Delete executor failed: {str(error)}'}), 500
+
 @app.get('/api/orders/executor')
 def list_executor_orders():
     """Заказы исполнителя: прямые + те на которые откликнулся."""

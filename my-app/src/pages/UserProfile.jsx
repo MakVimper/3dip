@@ -242,7 +242,7 @@ const UserProfile = () => {
               </div>
 
               {/* Левая колонка — галерея */}
-              <div className="uprofile-gallery">
+              <div className={`uprofile-gallery ${works.length === 0 ? 'uprofile-gallery--empty' : ''}`}>
                 {works.length > 0 && (
                   <div className="uprofile-gallery__thumbs">
                     {works.map((work, i) => (
@@ -278,9 +278,10 @@ const UserProfile = () => {
                     </>
                   ) : (
                     <div className="uprofile-gallery__empty">
-                      {cabinet?.companyAvatar
-                        ? <img src={cabinet.companyAvatar} alt="Логотип" className="uprofile-gallery__logo" />
-                        : <div className="uprofile-gallery__placeholder">{user.name?.charAt(0)?.toUpperCase() || '?'}</div>}
+                      <div className="uprofile-gallery__no-works">
+                        <div className="uprofile-gallery__no-works-icon">🖼️</div>
+                        <p className="uprofile-gallery__no-works-text">У исполнителя нет фото работ</p>
+                      </div>
                     </div>
                   )}
                 </div>

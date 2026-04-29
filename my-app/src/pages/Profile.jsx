@@ -1460,10 +1460,34 @@ const Profile = () => {
                       </div>
                     </section>
 
-                    <button type="button" className="profile-btn profile-btn--action"
-                      onClick={saveExecutorAndCabinet} disabled={isExecutorSaving}>
-                      {isExecutorSaving ? 'Сохранение...' : 'Сохранить профиль и кабинет'}
-                    </button>
+                    <div className="executor-cabinet-actions">
+                      <button type="button" className="profile-btn profile-btn--save-small"
+                        onClick={saveExecutorAndCabinet} disabled={isExecutorSaving}>
+                        {isExecutorSaving ? 'Сохранение...' : 'Сохранить профиль и кабинет'}
+                      </button>
+                      <button type="button" className="profile-btn profile-btn--logout"
+                        style={{ fontSize: 13, padding: '8px 14px' }}
+                        onClick={() => setConfirmModal({
+                          title: 'Удалить профиль исполнителя?',
+                          message: 'Все данные кабинета будут удалены. Это действие нельзя отменить.',
+                          confirmText: 'Удалить',
+                          danger: true,
+                          onConfirm: async () => {
+                            setConfirmModal(null);
+                            try {
+                              const res = await fetch(`/api/executors?userId=${user.id}`, { method: 'DELETE' });
+                              if (!res.ok) throw new Error('Ошибка удаления');
+                              showToast('Профиль исполнителя удалён', 'success');
+                              setExecutor(null);
+                              setTab('about');
+                            } catch (e) {
+                              showToast(e.message || 'Ошибка удаления', 'error');
+                            }
+                          },
+                        })}>
+                        Удалить профиль исполнителя
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
