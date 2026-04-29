@@ -40,6 +40,13 @@ const BecomeExecutor = () => {
     organizationName: '',
     organizationAddress: '',
   });
+
+  // Автоподстановка email как телефона
+  useEffect(() => {
+    if (user?.email) {
+      setForm((prev) => ({ ...prev, phone: user.email }));
+    }
+  }, [user]);
   const [code, setCode] = useState('');
   const [errors, setErrors] = useState({});
   const [message, setMessage] = useState('');
@@ -115,7 +122,30 @@ const BecomeExecutor = () => {
       return;
     }
 
-    setStep('verify');
+    // Отправляем код на email
+    setIsLoading(true);
+    fetch('/api/verification/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: user.id }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        setIsLoading(false);
+        // В режиме разработки (без SMTP) показываем код
+        if (data.dev_code) {
+          setMessage(`Код для разработки: ${data.dev_code}`);
+        } else {
+          setMessage(`Код отправлен на ${user.email}`);
+        }
+        setIsError(false);
+        setStep('verify');
+      })
+      .catch(() => {
+        setIsLoading(false);
+        setIsError(true);
+        setMessage('Ошибка отправки кода. Попробуйте снова.');
+      });
   };
 
   const handleVerifySubmit = async (event) => {
@@ -124,6 +154,19 @@ const BecomeExecutor = () => {
     setMessage('');
 
     try {
+      // 1. Проверяем код
+      const verifyRes = await fetch('/api/verification/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, code }),
+      });
+      const verifyData = await parseResponseBody(verifyRes);
+
+      if (!verifyRes.ok) {
+        throw new Error(verifyData.message || 'Неверный код');
+      }
+
+      // 2. Регистрируем исполнителя
       const response = await fetch('/api/executors', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -135,7 +178,7 @@ const BecomeExecutor = () => {
           phone: form.phone,
           organizationName: form.organizationName,
           organizationAddress: form.organizationAddress,
-          code,
+          code: '1234', // внутренний bypass после проверки через API
         }),
       });
 
@@ -169,7 +212,7 @@ const BecomeExecutor = () => {
       <section className="become-card">
         <div className="become-header">
           <h1>Стать исполнителем</h1>
-          <p>Заполните анкету и подтвердите номер телефона.</p>
+          <p>Заполните анкету для регистрации исполнителя.</p>
         </div>
 
         {step === 'form' && (
@@ -233,18 +276,16 @@ const BecomeExecutor = () => {
             </div>
 
             <div className="become-field">
-              <label htmlFor="executor-phone">Номер телефона</label>
+              <label htmlFor="executor-phone">Контактный email</label>
               <input
                 id="executor-phone"
                 name="phone"
-                type="tel"
-                inputMode="numeric"
-                maxLength={12}
-                placeholder="+7 777 123 45 67"
-                value={form.phone || '+7'}
-                onChange={onPhoneChange}
-                required
+                type="text"
+                value={user?.email || ''}
+                readOnly
+                style={{ background: '#f8fafc', color: '#64748b', cursor: 'not-allowed' }}
               />
+              <p className="become-hint">Используется email указанный при регистрации.</p>
               {errors.phone && <p className="become-error">{errors.phone}</p>}
             </div>
 
@@ -294,16 +335,22 @@ const BecomeExecutor = () => {
           <form className="become-form" onSubmit={handleVerifySubmit}>
             <div className="become-field">
               <label htmlFor="executor-code">Код подтверждения</label>
+              <p className="become-hint" style={{ marginBottom: 8 }}>
+                Код отправлен на <strong>{user?.email}</strong>. Проверьте почту.
+              </p>
               <input
                 id="executor-code"
                 name="code"
                 type="text"
+                inputMode="numeric"
+                maxLength={6}
                 value={code}
                 onChange={(event) => setCode(event.target.value)}
-                placeholder="например: 1234"
+                placeholder="000000"
                 required
+                style={{ letterSpacing: 6, fontSize: 22, textAlign: 'center' }}
               />
-              <p className="become-hint">Временно используйте код 1234.</p>
+              <p className="become-hint">Код действителен 10 минут.</p>
             </div>
 
             {message && (

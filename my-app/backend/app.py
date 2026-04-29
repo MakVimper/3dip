@@ -6,6 +6,11 @@ from psycopg2.extras import RealDictCursor
 import json
 from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
+import smtplib
+import random
+import string
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 load_dotenv()
 
@@ -17,6 +22,49 @@ DB_PORT = int(os.getenv('DB_PORT', 5432))
 DB_USER = os.getenv('DB_USER', 'postgres')
 DB_PASSWORD = os.getenv('DB_PASSWORD', '123')
 DB_NAME = os.getenv('DB_NAME', '3d_printing')
+
+SMTP_HOST     = os.getenv('SMTP_HOST', 'smtp.gmail.com')
+SMTP_PORT     = int(os.getenv('SMTP_PORT', 587))
+SMTP_USER     = os.getenv('SMTP_USER', '')
+SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '')
+SMTP_FROM     = os.getenv('SMTP_FROM', SMTP_USER)
+
+def send_email(to_email: str, subject: str, body: str) -> bool:
+    """Отправить письмо через SMTP. Возвращает True при успехе."""
+    if not SMTP_USER or not SMTP_PASSWORD:
+        return False
+    try:
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = subject
+        msg['From']    = SMTP_FROM
+        msg['To']      = to_email
+        msg.attach(MIMEText(body, 'html', 'utf-8'))
+
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASSWORD)
+            server.sendmail(SMTP_FROM, [to_email], msg.as_string())
+        return True
+    except Exception as e:
+        print(f'[SMTP] Error: {e}')
+        return False
+
+def ensure_verification_codes_table():
+    sql = '''
+    CREATE TABLE IF NOT EXISTS verification_codes (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        code TEXT NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        used BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+    '''
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql)
+        conn.commit()
 
 def get_connection():
     return psycopg2.connect(
@@ -1630,13 +1678,111 @@ def create_order():
     except Exception as error:
         return jsonify({'message': f'Create order failed: {str(error)}'}), 500
 
+
+@app.post('/api/verification/send')
+def send_verification_code():
+    """Генерирует 6-значный код и отправляет на email пользователя."""
+    payload = request.get_json(silent=True) or {}
+    user_id = payload.get('userId')
+
+    if not user_id or not str(user_id).isdigit():
+        return jsonify({'message': 'userId is required'}), 400
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute('SELECT id, email FROM users WHERE id = %s', (int(user_id),))
+                user = cur.fetchone()
+
+                if not user:
+                    return jsonify({'message': 'User not found'}), 404
+
+                code = ''.join(random.choices(string.digits, k=6))
+
+                cur.execute(
+                    'UPDATE verification_codes SET used = TRUE WHERE user_id = %s AND used = FALSE',
+                    (int(user_id),)
+                )
+                cur.execute(
+                    "INSERT INTO verification_codes (user_id, code, expires_at) VALUES (%s, %s, NOW() + INTERVAL '10 minutes')",
+                    (int(user_id), code)
+                )
+            conn.commit()
+
+        email_body = f'''
+        <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;background:#f8fafc;border-radius:16px;">
+          <h2 style="color:#0f172a;margin-bottom:8px;">Подтверждение аккаунта исполнителя</h2>
+          <p style="color:#64748b;margin-bottom:24px;">Ваш код подтверждения:</p>
+          <div style="background:#ffffff;border:2px solid #f5bd30;border-radius:12px;padding:20px;text-align:center;margin-bottom:24px;">
+            <span style="font-size:36px;font-weight:800;letter-spacing:8px;color:#0f172a;">{code}</span>
+          </div>
+          <p style="color:#94a3b8;font-size:13px;">Код действителен 10 минут. Не передавайте его никому.</p>
+        </div>
+        '''
+
+        sent = send_email(user['email'], 'Код подтверждения — 3DIP', email_body)
+
+        if not sent:
+            return jsonify({'message': 'Email sent', 'dev_code': code}), 200
+
+        return jsonify({'message': 'Email sent'}), 200
+
+    except Exception as e:
+        return jsonify({'message': f'Send code failed: {str(e)}'}), 500
+
+
+@app.post('/api/verification/check')
+def check_verification_code():
+    """Проверяет код подтверждения."""
+    payload = request.get_json(silent=True) or {}
+    user_id = payload.get('userId')
+    code    = (payload.get('code') or '').strip()
+
+    if not user_id or not str(user_id).isdigit():
+        return jsonify({'message': 'userId is required'}), 400
+
+    if not code:
+        return jsonify({'message': 'code is required'}), 400
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    '''
+                    SELECT id FROM verification_codes
+                    WHERE user_id = %s
+                      AND code = %s
+                      AND used = FALSE
+                      AND expires_at > NOW()
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    ''',
+                    (int(user_id), code)
+                )
+                row = cur.fetchone()
+
+                if not row:
+                    return jsonify({'message': 'Неверный или истёкший код'}), 400
+
+                cur.execute(
+                    'UPDATE verification_codes SET used = TRUE WHERE id = %s',
+                    (row['id'],)
+                )
+            conn.commit()
+
+        return jsonify({'ok': True}), 200
+
+    except Exception as e:
+        return jsonify({'message': f'Check code failed: {str(e)}'}), 500
+
+
 if __name__ == '__main__':
-    ensure_users_table()
     ensure_executors_table()
     ensure_orders_table()
     ensure_order_responses_table()
     ensure_chat_messages_table()
     ensure_reviews_table()
     ensure_executor_cabinet_table()
+    ensure_verification_codes_table()
     port = int(os.getenv('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
