@@ -147,6 +147,31 @@
   font-size: 12px;
 }
 
+.help-file-picker__input {
+  display: none;
+}
+
+.help-file-picker__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #f5bd30;
+  color: #7c5f11;
+  background: #fff9ea;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.help-file-picker__button:hover {
+  border-color: #f5bd30;
+  background: #fff9ea;
+  color: #7c5f11;
+}
+
 @media (max-width: 720px) {
   .help-hero h1 {
     font-size: 24px;

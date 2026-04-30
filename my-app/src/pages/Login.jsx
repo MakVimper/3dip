@@ -109,7 +109,7 @@ const Login = () => {
             <input
               id="login-email"
               name="email"
-              type="email"
+              type="text"
               placeholder="например: aidana@mail.kz"
               value={form.email}
               onChange={onChange}

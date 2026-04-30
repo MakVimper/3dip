@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 import smtplib
 import random
 import string
+import uuid
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -92,6 +93,85 @@ def ensure_users_table():
         with conn.cursor() as cur:
             cur.execute(sql)
             cur.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;')
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';")
+            cur.execute("UPDATE users SET role = 'user' WHERE role IS NULL OR role = '';")
+            cur.execute(
+                '''
+                ALTER TABLE users
+                DROP CONSTRAINT IF EXISTS users_role_check;
+                '''
+            )
+            cur.execute(
+                '''
+                ALTER TABLE users
+                ADD CONSTRAINT users_role_check
+                CHECK (role IN ('user', 'admin'));
+                '''
+            )
+        conn.commit()
+
+def ensure_admin_account():
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT id FROM users WHERE email = %s", ('admin',))
+            admin_user = cur.fetchone()
+
+            if admin_user is None:
+                cur.execute(
+                    '''
+                    INSERT INTO users (name, email, password_hash, role)
+                    VALUES (%s, %s, %s, %s)
+                    ''',
+                    ('Администратор', 'admin', generate_password_hash('admin'), 'admin'),
+                )
+            else:
+                cur.execute(
+                    "UPDATE users SET role = 'admin' WHERE id = %s",
+                    (int(admin_user['id']),),
+                )
+        conn.commit()
+
+def ensure_support_messages_table():
+    sql = '''
+    CREATE TABLE IF NOT EXISTS support_messages (
+        id SERIAL PRIMARY KEY,
+        sender_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        recipient_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        subject TEXT,
+        order_number TEXT,
+        content TEXT,
+        file_name TEXT,
+        file_data TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+    '''
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql)
+            cur.execute('ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS subject TEXT;')
+            cur.execute('ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS order_number TEXT;')
+            cur.execute('ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS file_name TEXT;')
+            cur.execute('ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS file_data TEXT;')
+            cur.execute('ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN NOT NULL DEFAULT FALSE;')
+            cur.execute('ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS thread_id TEXT;')
+        conn.commit()
+
+def ensure_support_threads_table():
+    sql = '''
+    CREATE TABLE IF NOT EXISTS support_threads (
+        id TEXT PRIMARY KEY,
+        creator_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        admin_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        subject TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open',
+        created_at TIMESTAMP DEFAULT NOW(),
+        closed_at TIMESTAMP,
+        CHECK (status IN ('open', 'closed'))
+    );
+    '''
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql)
         conn.commit()
 
 def ensure_executors_table():
@@ -292,11 +372,11 @@ def register():
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     '''
-                    INSERT INTO users (name, email, password_hash)
-                    VALUES (%s, %s, %s)
-                    RETURNING id, name, email, created_at
+                    INSERT INTO users (name, email, password_hash, role)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id, name, email, role, created_at
                     ''',
-                    (name, email, password_hash),
+                    (name, email, password_hash, 'user'),
                 )
                 user = cur.fetchone()
             conn.commit()
@@ -321,7 +401,7 @@ def login():
         with get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
-                    'SELECT id, name, email, password_hash FROM users WHERE email = %s',
+                    'SELECT id, name, email, password_hash, role FROM users WHERE email = %s',
                     (email,),
                 )
                 user = cur.fetchone()
@@ -338,6 +418,7 @@ def login():
                     'id': user['id'],
                     'name': user['name'],
                     'email': user['email'],
+                    'role': user.get('role') or 'user',
                 }
             }
         ), 200
@@ -351,7 +432,7 @@ def get_user(user_id):
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     '''
-                    SELECT u.id, u.name, u.email, u.avatar_url, u.created_at,
+                    SELECT u.id, u.name, u.email, u.avatar_url, u.role, u.created_at,
                            e.executor_type, e.first_name, e.last_name, e.phone,
                            e.organization_name, e.organization_address
                     FROM users u
@@ -381,6 +462,7 @@ def get_user(user_id):
             'name': row.get('name'),
             'email': row.get('email'),
             'avatar_url': row.get('avatar_url'),
+            'role': row.get('role') or 'user',
             'created_at': row.get('created_at'),
         }
 
@@ -407,7 +489,7 @@ def update_user(user_id):
                     UPDATE users
                     SET name = %s, email = %s, avatar_url = %s
                     WHERE id = %s
-                    RETURNING id, name, email, avatar_url, created_at
+                    RETURNING id, name, email, avatar_url, role, created_at
                     ''',
                     (name, email, avatar_url or None, user_id),
                 )
@@ -1621,6 +1703,369 @@ def list_chat_threads():
     except Exception as error:
         return jsonify({'message': f'List chat threads failed: {str(error)}'}), 500
 
+@app.get('/api/support/threads')
+def list_support_threads():
+    user_id = request.args.get('userId', '').strip()
+
+    if not user_id.isdigit():
+        return jsonify({'message': 'userId is required'}), 400
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute('SELECT id, role FROM users WHERE id = %s', (int(user_id),))
+                current_user = cur.fetchone()
+                if current_user is None:
+                    return jsonify({'message': 'User not found'}), 404
+
+                is_admin = (current_user.get('role') or 'user') == 'admin'
+                if is_admin:
+                    cur.execute(
+                        '''
+                        SELECT
+                            st.id AS thread_id,
+                            st.subject,
+                            st.status,
+                            st.created_at,
+                            st.closed_at,
+                            st.creator_user_id AS peer_id,
+                            u.name AS peer_name,
+                            u.role AS peer_role,
+                            lm.content AS last_message,
+                            lm.created_at AS last_time,
+                            (
+                                SELECT COUNT(*)
+                                FROM support_messages smu
+                                WHERE smu.thread_id = st.id
+                                  AND smu.recipient_user_id = %s
+                                  AND smu.is_read = FALSE
+                            ) AS unread_count
+                        FROM support_threads st
+                        JOIN users u ON u.id = st.creator_user_id
+                        LEFT JOIN LATERAL (
+                            SELECT content, created_at
+                            FROM support_messages
+                            WHERE thread_id = st.id
+                            ORDER BY created_at DESC
+                            LIMIT 1
+                        ) lm ON TRUE
+                        ORDER BY COALESCE(lm.created_at, st.created_at) DESC
+                        ''',
+                        (int(user_id),),
+                    )
+                else:
+                    cur.execute(
+                        '''
+                        SELECT
+                            st.id AS thread_id,
+                            st.subject,
+                            st.status,
+                            st.created_at,
+                            st.closed_at,
+                            st.admin_user_id AS peer_id,
+                            u.name AS peer_name,
+                            u.role AS peer_role,
+                            lm.content AS last_message,
+                            lm.created_at AS last_time,
+                            (
+                                SELECT COUNT(*)
+                                FROM support_messages smu
+                                WHERE smu.thread_id = st.id
+                                  AND smu.recipient_user_id = %s
+                                  AND smu.is_read = FALSE
+                            ) AS unread_count
+                        FROM support_threads st
+                        JOIN users u ON u.id = st.admin_user_id
+                        LEFT JOIN LATERAL (
+                            SELECT content, created_at
+                            FROM support_messages
+                            WHERE thread_id = st.id
+                            ORDER BY created_at DESC
+                            LIMIT 1
+                        ) lm ON TRUE
+                        WHERE st.creator_user_id = %s
+                        ORDER BY COALESCE(lm.created_at, st.created_at) DESC
+                        ''',
+                        (int(user_id), int(user_id)),
+                    )
+                threads = cur.fetchall()
+                return jsonify({'threads': threads}), 200
+    except Exception as error:
+        return jsonify({'message': f'List support threads failed: {str(error)}'}), 500
+
+@app.get('/api/support/messages')
+def list_support_messages():
+    user_id = request.args.get('userId', '').strip()
+    thread_id = request.args.get('threadId', '').strip()
+
+    if not user_id.isdigit() or not thread_id:
+        return jsonify({'message': 'userId and threadId are required'}), 400
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute('SELECT id, role FROM users WHERE id = %s', (int(user_id),))
+                current_user = cur.fetchone()
+                if current_user is None:
+                    return jsonify({'message': 'User not found'}), 404
+
+                cur.execute(
+                    '''
+                    SELECT id, creator_user_id, admin_user_id
+                    FROM support_threads
+                    WHERE id = %s
+                    ''',
+                    (thread_id,),
+                )
+                thread = cur.fetchone()
+                if thread is None:
+                    return jsonify({'message': 'Thread not found'}), 404
+
+                if int(user_id) not in (int(thread['creator_user_id']), int(thread['admin_user_id'])):
+                    return jsonify({'message': 'Not allowed'}), 403
+
+                cur.execute(
+                    '''
+                    SELECT
+                        sm.id,
+                        sm.sender_user_id,
+                        sm.recipient_user_id,
+                        sm.subject,
+                        sm.order_number,
+                        sm.content,
+                        sm.file_name,
+                        sm.file_data,
+                        sm.created_at,
+                        sender.role AS sender_role
+                    FROM support_messages sm
+                    JOIN users sender ON sender.id = sm.sender_user_id
+                    WHERE sm.thread_id = %s
+                    ORDER BY sm.created_at ASC
+                    ''',
+                    (thread_id,),
+                )
+                messages = cur.fetchall()
+
+        return jsonify({'messages': messages}), 200
+    except Exception as error:
+        return jsonify({'message': f'List support messages failed: {str(error)}'}), 500
+
+@app.post('/api/support/read')
+def mark_support_messages_read():
+    payload = request.get_json(silent=True) or {}
+    user_id = payload.get('userId')
+    thread_id = payload.get('threadId')
+
+    if not user_id or not thread_id:
+        return jsonify({'ok': False}), 400
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    '''
+                    SELECT creator_user_id, admin_user_id
+                    FROM support_threads
+                    WHERE id = %s
+                    ''',
+                    (thread_id,),
+                )
+                thread = cur.fetchone()
+                if thread is None:
+                    return jsonify({'ok': False, 'message': 'Thread not found'}), 404
+                if int(user_id) not in (int(thread['creator_user_id']), int(thread['admin_user_id'])):
+                    return jsonify({'ok': False, 'message': 'Not allowed'}), 403
+
+                cur.execute(
+                    '''
+                    UPDATE support_messages
+                    SET is_read = TRUE
+                    WHERE thread_id = %s
+                      AND recipient_user_id = %s
+                      AND is_read = FALSE
+                    ''',
+                    (thread_id, int(user_id)),
+                )
+            conn.commit()
+        return jsonify({'ok': True}), 200
+    except Exception as error:
+        return jsonify({'message': f'Mark support read failed: {str(error)}'}), 500
+
+@app.post('/api/support/tickets')
+def create_support_ticket():
+    payload = request.get_json(silent=True) or {}
+    user_id = payload.get('userId')
+    subject = (payload.get('subject') or '').strip()
+    content = (payload.get('content') or '').strip()
+    file_name = (payload.get('fileName') or '').strip()
+    file_data = (payload.get('fileData') or '').strip()
+
+    if user_id is None or not str(user_id).isdigit():
+        return jsonify({'message': 'userId is required'}), 400
+    if not subject:
+        return jsonify({'message': 'subject is required'}), 400
+    if not content and not file_data:
+        return jsonify({'message': 'content or file is required'}), 400
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute('SELECT id, role FROM users WHERE id = %s', (int(user_id),))
+                sender = cur.fetchone()
+                if sender is None:
+                    return jsonify({'message': 'User not found'}), 404
+                if (sender.get('role') or 'user') == 'admin':
+                    return jsonify({'message': 'Admin cannot create support ticket as user'}), 400
+
+                cur.execute(
+                    '''
+                    SELECT id
+                    FROM users
+                    WHERE role = 'admin'
+                    ORDER BY id ASC
+                    LIMIT 1
+                    '''
+                )
+                admin_user = cur.fetchone()
+                if admin_user is None:
+                    return jsonify({'message': 'Admin not found'}), 404
+
+                thread_id = str(uuid.uuid4())
+                cur.execute(
+                    '''
+                    INSERT INTO support_threads (id, creator_user_id, admin_user_id, subject, status)
+                    VALUES (%s, %s, %s, %s, 'open')
+                    ''',
+                    (thread_id, int(user_id), int(admin_user['id']), subject),
+                )
+                cur.execute(
+                    '''
+                    INSERT INTO support_messages
+                    (thread_id, sender_user_id, recipient_user_id, subject, content, file_name, file_data, is_read)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, FALSE)
+                    RETURNING id, thread_id, sender_user_id, recipient_user_id, content, file_name, file_data, created_at
+                    ''',
+                    (
+                        thread_id,
+                        int(user_id),
+                        int(admin_user['id']),
+                        subject,
+                        content or None,
+                        file_name or None,
+                        file_data or None,
+                    ),
+                )
+                first_message = cur.fetchone()
+            conn.commit()
+
+        return jsonify({'threadId': thread_id, 'message': first_message}), 201
+    except Exception as error:
+        return jsonify({'message': f'Create support ticket failed: {str(error)}'}), 500
+
+@app.post('/api/support/messages')
+def create_support_message():
+    payload = request.get_json(silent=True) or {}
+    sender_id = payload.get('senderId')
+    thread_id = (payload.get('threadId') or '').strip()
+    content = (payload.get('content') or '').strip()
+    file_name = (payload.get('fileName') or '').strip()
+    file_data = (payload.get('fileData') or '').strip()
+
+    if sender_id is None or not str(sender_id).isdigit():
+        return jsonify({'message': 'senderId is required'}), 400
+
+    if not thread_id:
+        return jsonify({'message': 'threadId is required'}), 400
+
+    if not content and not file_data:
+        return jsonify({'message': 'content or file is required'}), 400
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute('SELECT id, role FROM users WHERE id = %s', (int(sender_id),))
+                sender = cur.fetchone()
+                if sender is None:
+                    return jsonify({'message': 'Sender not found'}), 404
+
+                cur.execute(
+                    '''
+                    SELECT id, creator_user_id, admin_user_id, status, subject
+                    FROM support_threads
+                    WHERE id = %s
+                    ''',
+                    (thread_id,),
+                )
+                thread = cur.fetchone()
+                if thread is None:
+                    return jsonify({'message': 'Thread not found'}), 404
+                if int(sender_id) not in (int(thread['creator_user_id']), int(thread['admin_user_id'])):
+                    return jsonify({'message': 'Not allowed'}), 403
+                if (thread.get('status') or 'open') == 'closed':
+                    return jsonify({'message': 'Чат закрыт администратором'}), 400
+
+                recipient_id = int(thread['admin_user_id']) if int(sender_id) == int(thread['creator_user_id']) else int(thread['creator_user_id'])
+
+                cur.execute(
+                    '''
+                    INSERT INTO support_messages
+                    (thread_id, sender_user_id, recipient_user_id, subject, content, file_name, file_data, is_read)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, FALSE)
+                    RETURNING id, thread_id, sender_user_id, recipient_user_id, subject, content, file_name, file_data, created_at
+                    ''',
+                    (
+                        thread_id,
+                        int(sender_id),
+                        recipient_id,
+                        thread.get('subject') or None,
+                        content or None,
+                        file_name or None,
+                        file_data or None,
+                    ),
+                )
+                message = cur.fetchone()
+            conn.commit()
+
+        return jsonify({'message': message}), 201
+    except Exception as error:
+        return jsonify({'message': f'Create support message failed: {str(error)}'}), 500
+
+@app.post('/api/support/close')
+def close_support_thread():
+    payload = request.get_json(silent=True) or {}
+    user_id = payload.get('userId')
+    thread_id = (payload.get('threadId') or '').strip()
+
+    if user_id is None or not str(user_id).isdigit() or not thread_id:
+        return jsonify({'message': 'userId and threadId are required'}), 400
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute('SELECT id, role FROM users WHERE id = %s', (int(user_id),))
+                current_user = cur.fetchone()
+                if current_user is None:
+                    return jsonify({'message': 'User not found'}), 404
+                if (current_user.get('role') or 'user') != 'admin':
+                    return jsonify({'message': 'Only admin can close thread'}), 403
+
+                cur.execute(
+                    '''
+                    UPDATE support_threads
+                    SET status = 'closed', closed_at = NOW()
+                    WHERE id = %s
+                    RETURNING id, status, closed_at
+                    ''',
+                    (thread_id,),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    return jsonify({'message': 'Thread not found'}), 404
+            conn.commit()
+        return jsonify({'thread': row}), 200
+    except Exception as error:
+        return jsonify({'message': f'Close support thread failed: {str(error)}'}), 500
+
 @app.post('/api/orders')
 def create_order():
     payload = request.get_json(silent=True) or {}
@@ -1792,6 +2237,7 @@ def check_verification_code():
 
 
 if __name__ == '__main__':
+    ensure_users_table()
     ensure_executors_table()
     ensure_orders_table()
     ensure_order_responses_table()
@@ -1799,5 +2245,8 @@ if __name__ == '__main__':
     ensure_reviews_table()
     ensure_executor_cabinet_table()
     ensure_verification_codes_table()
+    ensure_support_threads_table()
+    ensure_support_messages_table()
+    ensure_admin_account()
     port = int(os.getenv('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)

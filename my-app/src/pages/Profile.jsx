@@ -53,6 +53,7 @@ const getTabFromLocation = () => {
   if (tab === 'executor') return 'executor';
   if (tab === 'market') return 'market';
   if (tab === 'chats') return 'chats';
+  if (tab === 'support') return 'support';
   return 'about';
 };
 
@@ -126,11 +127,22 @@ const Profile = () => {
   const [chatError, setChatError] = useState('');
   const chatBodyRef = useRef(null);
   const chatBodyModalRef = useRef(null);
+  const supportChatBodyRef = useRef(null);
   const [previewFile, setPreviewFile] = useState({ open: false, name: '', data: '' });
   const [chatThreads, setChatThreads] = useState([]);
   const [isThreadsLoading, setIsThreadsLoading] = useState(false);
   const [threadsMessage, setThreadsMessage] = useState('');
   const [chatMode, setChatMode] = useState('executor');
+  const [supportThreads, setSupportThreads] = useState([]);
+  const [supportMessages, setSupportMessages] = useState([]);
+  const [activeSupportThread, setActiveSupportThread] = useState(null);
+  const [isSupportThreadsLoading, setIsSupportThreadsLoading] = useState(false);
+  const [isSupportMessagesLoading, setIsSupportMessagesLoading] = useState(false);
+  const [supportError, setSupportError] = useState('');
+  const [supportMessageText, setSupportMessageText] = useState('');
+  const [supportFileName, setSupportFileName] = useState('');
+  const [supportFileData, setSupportFileData] = useState('');
+  const [isSupportSending, setIsSupportSending] = useState(false);
   const [profileReviews, setProfileReviews] = useState([]);
   const [isReviewsLoading, setIsReviewsLoading] = useState(false);
   const [reviewsMessage, setReviewsMessage] = useState('');
@@ -165,6 +177,19 @@ const Profile = () => {
   const [ordersStatusFilter, setOrdersStatusFilter] = useState('all'); // 'all' | 'Ожидает' | 'Изготовка изделия' | 'Готов' | 'Отказано'
   const [chatsStatusFilter, setChatsStatusFilter] = useState('all'); // 'all' | 'Ожидает' | 'Изготовка изделия' | 'Готов'
   const [executorOrdersStatusFilter, setExecutorOrdersStatusFilter] = useState('all'); // Фильтр для заказов клиентов
+  const isAdmin = (user?.role || 'user') === 'admin';
+
+  const parseSupportRequestContent = (content = '') => {
+    const marker = 'Номер заказа:';
+    if (!content.includes(marker)) {
+      return { messageText: content, orderNumber: '' };
+    }
+    const parts = content.split(marker);
+    return {
+      messageText: (parts[0] || '').trim(),
+      orderNumber: (parts[1] || '').trim(),
+    };
+  };
 
   const isChatLockedForUser = (orderUserId, acceptedExecutorUserId) => {
     // Чат заблокирован только если:
@@ -651,10 +676,28 @@ const Profile = () => {
     });
   };
 
+  const scrollSupportChatToBottom = () => {
+    const node = supportChatBodyRef.current;
+    if (node) node.scrollTop = node.scrollHeight;
+  };
+
+  const forceScrollSupportToBottom = () => {
+    requestAnimationFrame(() => {
+      scrollSupportChatToBottom();
+      setTimeout(scrollSupportChatToBottom, 0);
+      setTimeout(scrollSupportChatToBottom, 120);
+    });
+  };
+
   useEffect(() => {
     if (!activeChat) return;
     requestAnimationFrame(scrollChatsToBottom);
   }, [activeChat, chatMessages]);
+
+  useEffect(() => {
+    if (!activeSupportThread) return;
+    forceScrollSupportToBottom();
+  }, [activeSupportThread, supportMessages]);
 
   const openPreview = (name, data) => {
     if (!data) return;
@@ -715,12 +758,119 @@ const Profile = () => {
     }
   };
 
+  const loadSupportThreads = async () => {
+    if (!user?.id) return;
+    setIsSupportThreadsLoading(true);
+    setSupportError('');
+    try {
+      const response = await fetch(`/api/support/threads?userId=${user.id}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Ошибка загрузки обращений');
+      const nextThreads = Array.isArray(data.threads) ? data.threads : [];
+      setSupportThreads(nextThreads);
+      if (!activeSupportThread && nextThreads.length > 0) {
+        const firstThread = nextThreads[0];
+        setActiveSupportThread({
+          threadId: firstThread.thread_id,
+          subject: firstThread.subject || 'Без темы',
+          status: firstThread.status || 'open',
+          createdAt: firstThread.created_at || null,
+          peerId: firstThread.peer_id,
+          peerName: firstThread.peer_name || 'Пользователь',
+          peerRole: firstThread.peer_role || 'user',
+        });
+      }
+    } catch (error) {
+      setSupportError(error.message || 'Ошибка загрузки обращений');
+    } finally {
+      setIsSupportThreadsLoading(false);
+    }
+  };
+
+  const loadSupportMessages = async (threadId) => {
+    if (!user?.id || !threadId) return;
+    setIsSupportMessagesLoading(true);
+    setSupportError('');
+    try {
+      const response = await fetch(`/api/support/messages?userId=${user.id}&threadId=${threadId}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Ошибка загрузки сообщений');
+      setSupportMessages(Array.isArray(data.messages) ? data.messages : []);
+      await fetch('/api/support/read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, threadId }),
+      });
+    } catch (error) {
+      setSupportError(error.message || 'Ошибка загрузки сообщений');
+    } finally {
+      setIsSupportMessagesLoading(false);
+    }
+  };
+
+  const sendSupportMessage = async () => {
+    if (!user?.id || !activeSupportThread?.threadId) return;
+    if (!supportMessageText.trim() && !supportFileData) return;
+    setIsSupportSending(true);
+    setSupportError('');
+    try {
+      const response = await fetch('/api/support/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          senderId: user.id,
+          threadId: activeSupportThread.threadId,
+          content: supportMessageText.trim(),
+          fileName: supportFileName,
+          fileData: supportFileData,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Ошибка отправки сообщения');
+      setSupportMessageText('');
+      setSupportFileName('');
+      setSupportFileData('');
+      await loadSupportMessages(activeSupportThread.threadId);
+    } catch (error) {
+      setSupportError(error.message || 'Ошибка отправки сообщения');
+    } finally {
+      setIsSupportSending(false);
+    }
+  };
+
   // Polling: обновляем треды каждые 8 секунд пока вкладка чатов активна
   useEffect(() => {
     if (activeTab !== 'chats' || !user?.id) return;
     const interval = setInterval(refreshChatThreads, 8000);
     return () => clearInterval(interval);
   }, [activeTab, user, activeChat]);
+
+  useEffect(() => {
+    if (activeTab !== 'support' || !user?.id) return;
+    loadSupportThreads();
+  }, [activeTab, user]);
+
+  useEffect(() => {
+    if (activeTab !== 'support' || !activeSupportThread?.threadId) return;
+    loadSupportMessages(activeSupportThread.threadId);
+  }, [activeTab, activeSupportThread?.threadId]);
+
+  const closeSupportThread = async () => {
+    if (!user?.id || !activeSupportThread?.threadId || !isAdmin) return;
+    try {
+      const response = await fetch('/api/support/close', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, threadId: activeSupportThread.threadId }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Не удалось закрыть чат');
+      await loadSupportThreads();
+      setActiveSupportThread((prev) => (prev ? { ...prev, status: 'closed' } : prev));
+    } catch (error) {
+      setSupportError(error.message || 'Ошибка закрытия чата');
+    }
+  };
 
   const setTab = (tab) => {
     if (tab !== 'chats') setActiveChat(null);
@@ -738,7 +888,10 @@ const Profile = () => {
       if (nextTab === 'orders') { loadOrders(); if (executor) loadExecutorOrders(); }
       if (nextTab === 'executor') loadExecutor();
       if (nextTab === 'market') { loadMarketOrders(); loadExecutorOrders(); }
-      if (nextTab === 'chats') loadChatThreads();
+      if (nextTab === 'chats') {
+        loadChatThreads();
+      }
+      if (nextTab === 'support') loadSupportThreads();
       if (nextTab === 'about') loadProfileReviews();
     };
 
@@ -1203,6 +1356,13 @@ const Profile = () => {
               onClick={() => { setTab('chats'); loadChatThreads(); }}
             >
               Чаты
+            </button>
+            <button
+              type="button"
+              className={`profile-tab ${activeTab === 'support' ? 'profile-tab--active' : ''}`}
+              onClick={() => { setTab('support'); loadSupportThreads(); }}
+            >
+              Поддержка
             </button>
           </div>
 
@@ -2194,6 +2354,182 @@ const Profile = () => {
             </section>
           )}
 
+          {activeTab === 'support' && (
+            <section className="profile-card profile-card--orders">
+              <div className="orders-header">
+                <div>
+                  <h2>Поддержка</h2>
+                  <p>Обратиться в поддержку</p>
+                </div>
+              </div>
+              <p className="orders-item__details">
+                Опишите проблему, укажите номер заказа (если есть) и приложите файлы при необходимости.
+              </p>
+              {supportError && <p className="orders-message">{supportError}</p>}
+              <div className="chat-section">
+                <div className="chat-threads">
+                  {isSupportThreadsLoading ? (
+                    <p className="orders-empty">Загрузка обращений...</p>
+                  ) : supportThreads.length === 0 ? (
+                    <p className="orders-empty">Пока нет обращений.</p>
+                  ) : (
+                    <div className="support-threads-list">
+                      {supportThreads.map((thread) => (
+                        <article
+                          key={thread.thread_id}
+                          className={`chat-thread-item support-thread-item ${activeSupportThread?.threadId === thread.thread_id ? 'orders-item--active' : ''}`}
+                          onClick={() =>
+                            setActiveSupportThread({
+                              threadId: thread.thread_id,
+                              subject: thread.subject || 'Без темы',
+                              status: thread.status || 'open',
+                              createdAt: thread.created_at || null,
+                              peerId: thread.peer_id,
+                              peerName: thread.peer_name || 'Пользователь',
+                              peerRole: thread.peer_role || 'user',
+                            })
+                          }
+                        >
+                          <h3>
+                            {thread.subject || 'Без темы'}{' '}
+                            {(thread.peer_role || 'user') === 'admin' && <span className="support-role-badge">Админ</span>}
+                            {thread.status === 'closed' && <span className="support-status-badge">Закрыт</span>}
+                          </h3>
+                          <p className="support-thread-item__meta">{thread.peer_name || 'Пользователь'}</p>
+                          <p>{thread.last_message || 'Нет сообщений'}</p>
+                          {Number(thread.unread_count) > 0 && <span className="chat-unread-badge">{thread.unread_count}</span>}
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="chat-panel">
+                  {!activeSupportThread ? (
+                    <div className="chat-panel__empty"><p>Откройте чат, и он появится здесь.</p></div>
+                  ) : (
+                    <>
+                      <div className="chat-panel__header">
+                        <div>
+                          <h3>
+                            {activeSupportThread.subject || activeSupportThread.peerName}{' '}
+                            {(activeSupportThread.peerRole || 'user') === 'admin' && <span className="support-role-badge">Админ</span>}
+                            {(activeSupportThread.status || 'open') === 'closed' && <span className="support-status-badge">Закрыт</span>}
+                          </h3>
+                          <p className="orders-item__details">Собеседник: {activeSupportThread.peerName}</p>
+                        </div>
+                        {isAdmin && (activeSupportThread.status || 'open') !== 'closed' && (
+                          <button type="button" className="orders-view-btn orders-view-btn--danger" onClick={closeSupportThread}>
+                            Закрыть чат
+                          </button>
+                        )}
+                      </div>
+                      <div className="chat-body" ref={supportChatBodyRef}>
+                        {isSupportMessagesLoading ? (
+                          <p className="orders-empty">Загрузка сообщений...</p>
+                        ) : supportMessages.length === 0 ? (
+                          <p className="orders-empty">Сообщений пока нет.</p>
+                        ) : (
+                          supportMessages.map((msg, index) => {
+                            const isFirstRequestMessage = index === 0 && msg.sender_role !== 'admin';
+                            const parsed = parseSupportRequestContent(msg.content || '');
+                            return (
+                              <div
+                                key={msg.id}
+                                className={`chat-message ${Number(msg.sender_user_id) === Number(user.id) ? 'chat-message--me' : ''} ${msg.sender_role === 'admin' ? 'chat-message--admin' : ''} ${isFirstRequestMessage ? 'support-request-message' : ''}`}
+                              >
+                                {isFirstRequestMessage ? (
+                                  <div className="support-request-card">
+                                    <p className="support-request-card__label">Первичное обращение</p>
+                                    <h4 className="support-request-card__title">{activeSupportThread.subject || 'Без темы'}</h4>
+                                    <p className="support-request-card__text">{parsed.messageText || 'Без описания'}</p>
+                                    {parsed.orderNumber && (
+                                      <p className="support-request-card__meta">
+                                        Номер заказа: <strong>{parsed.orderNumber}</strong>
+                                      </p>
+                                    )}
+                                  </div>
+                                ) : (
+                                  msg.content && <p>{msg.content}</p>
+                                )}
+                                {msg.file_data && (
+                                  msg.file_data.startsWith('data:image') ? (
+                                    <button
+                                      type="button"
+                                      className="chat-image-btn"
+                                      onClick={() => openPreview(msg.file_name, msg.file_data)}
+                                    >
+                                      <img
+                                        src={msg.file_data}
+                                        alt={msg.file_name || 'Файл'}
+                                        onLoad={forceScrollSupportToBottom}
+                                      />
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="chat-file-btn"
+                                      onClick={() => openPreview(msg.file_name, msg.file_data)}
+                                    >
+                                      {msg.file_name || 'Файл'}
+                                    </button>
+                                  )
+                                )}
+                                <span>{new Date(msg.created_at).toLocaleDateString('ru-RU')}</span>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                      {(activeSupportThread.status || 'open') !== 'closed' && (
+                        <>
+                          <div className="chat-input support-input-grid">
+                            <label className="chat-attach support-attach">
+                              <input
+                                type="file"
+                                onChange={(event) => {
+                                  const file = event.target.files?.[0];
+                                  if (!file) return;
+                                  const reader = new FileReader();
+                                  reader.onload = () => {
+                                    const result = typeof reader.result === 'string' ? reader.result : '';
+                                    setSupportFileName(file.name);
+                                    setSupportFileData(result);
+                                  };
+                                  reader.readAsDataURL(file);
+                                }}
+                              />
+                              <span>Прикрепить файл</span>
+                            </label>
+                            <input
+                              type="text"
+                              placeholder={isAdmin ? 'Ответ пользователю' : 'Ваше сообщение'}
+                              value={supportMessageText}
+                              onChange={(event) => setSupportMessageText(event.target.value)}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter' && !event.shiftKey) {
+                                  event.preventDefault();
+                                  sendSupportMessage();
+                                }
+                              }}
+                            />
+                            <button type="button" className="orders-view-btn" onClick={sendSupportMessage} disabled={isSupportSending}>
+                              {isSupportSending ? 'Отправка...' : 'Отправить'}
+                            </button>
+                          </div>
+                          {supportFileName && <p className="chat-file-name">Файл: {supportFileName}</p>}
+                        </>
+                      )}
+                      {(activeSupportThread.status || 'open') === 'closed' && (
+                        <p className="orders-empty">Чат закрыт администратором. Для нового обращения создайте новую заявку на странице «Помощь».</p>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </section>
+          )}
+
           {/* ===== ВКЛАДКА: ЧАТЫ ===== */}
           {activeTab === 'chats' && (
             <section className="profile-card profile-card--orders">
@@ -2308,7 +2644,8 @@ const Profile = () => {
                               <button
                                 type="button"
                                 className={`orders-view-btn ${isActiveThread ? 'orders-view-btn--selected' : ''}`}
-                                onClick={() =>
+                                onClick={() => {
+                                  setActiveSupportThread(null);
                                   openChatWithResponder(
                                     thread.order_id,
                                     thread.peer_id,
@@ -2316,8 +2653,8 @@ const Profile = () => {
                                     thread.order_status,
                                     thread.order_user_id,
                                     thread.accepted_executor_user_id,
-                                  )
-                                }
+                                  );
+                                }}
                               >
                                 Открыть чат
                               </button>
@@ -2432,7 +2769,7 @@ const Profile = () => {
                     </>
                   ) : (
                     <div className="chat-panel__empty">
-                      <p className="orders-empty">Выберите чат из списка слева.</p>
+                      <p className="orders-empty">Откройте чат, и он появится здесь.</p>
                     </div>
                   )}
                 </div>
