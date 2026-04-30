@@ -1,4 +1,4 @@
-.executor-page {
+﻿.executor-page {
   min-height: 100vh;
   display: grid;
   place-items: center;
@@ -53,3 +53,5 @@
 .executor-btn:hover {
   background: #f3b013;
 }
+
+

@@ -1,4 +1,4 @@
-.toast-container {
+﻿.toast-container {
   position: fixed;
   bottom: 24px;
   right: 24px;
@@ -47,3 +47,5 @@
   from { opacity: 1; transform: translateY(0) scale(1); }
   to   { opacity: 0; transform: translateY(8px) scale(0.95); }
 }
+
+

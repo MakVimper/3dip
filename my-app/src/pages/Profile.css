@@ -1,4 +1,4 @@
-.profile-page {
+﻿.profile-page {
   min-height: 100vh;
   background: #f0f4f8;
 }
@@ -87,7 +87,6 @@
   color: #64748b;
   font-size: 12px;
 }
-
 
 .profile-card {
   background: #ffffff;
@@ -214,7 +213,6 @@
   justify-content: flex-end;
   gap: 12px;
 }
-
 
 .profile-executor-text {
   margin: 0;
@@ -473,7 +471,6 @@
   gap: 12px;
 }
 
-/* ── Service chips (catalog selector) ── */
 .svc-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -569,7 +566,6 @@
   color: #ffffff;
 }
 
-/* Price row inside chip */
 .svc-chip__price-row {
   display: flex;
   align-items: center;
@@ -629,9 +625,6 @@
     grid-template-columns: 1fr;
   }
 }
-
-
-
 
 @media (max-width: 980px) {
   .executor-row {
@@ -942,7 +935,6 @@
   font-size: 11px;
   color: #94a3b8;
 }
-
 
 .profile-link-btn {
   border: none;
@@ -1631,7 +1623,6 @@
   }
 }
 
-
 .profile-card--cabinet {
   display: grid;
   gap: 18px;
@@ -1821,20 +1812,15 @@
   }
 }
 
-
 .profile-executor-stack {
   display: grid;
   gap: 18px;
 }
 
-
 .cabinet-block {
   display: grid;
   gap: 16px;
 }
-
-
-
 
 :root {
   --ec-bg:          #eef2f7;
@@ -2234,8 +2220,6 @@ select.editor-input {
   margin: 24px 0;
 }
 
-
-
 .service-card-executor {
   background: #ffffff;
   border: 1px solid #e7e7e7;
@@ -2296,7 +2280,6 @@ select.editor-input {
   padding: 12px 14px;
 }
 
-/* ── Lightbox ── */
 .cabinet-work--clickable {
   cursor: zoom-in;
   position: relative;
@@ -2431,7 +2414,6 @@ select.editor-input {
   background: rgba(245, 189, 48, 0.15);
 }
 
-/* ── Works Slider ── */
 .works-slider {
   display: flex;
   flex-direction: column;
@@ -2542,7 +2524,6 @@ select.editor-input {
   border-color: #cbd5e1;
 }
 
-/* ── Works Mosaic overlay ── */
 .works-mosaic-overlay {
   position: fixed;
   inset: 0;
@@ -2627,7 +2608,6 @@ select.editor-input {
   background: rgba(15,23,42,0.35);
 }
 
-/* Lightbox counter */
 .lightbox-counter {
   position: fixed;
   bottom: 24px;
@@ -2702,7 +2682,6 @@ select.editor-input {
   flex-shrink: 0;
 }
 
-/* ── Find Executors page ── */
 .executor-filters {
   display: grid;
   gap: 14px;
@@ -2882,7 +2861,6 @@ select.editor-input {
   }
 }
 
-/* ── Service price editor ── */
 .service-prices {
   display: flex;
   flex-direction: column;
@@ -2924,7 +2902,6 @@ select.editor-input {
   font-weight: 600;
 }
 
-/* ── UserProfile services with price ── */
 .uprofile-services {
   display: flex;
   flex-direction: column;
@@ -3010,7 +2987,6 @@ select.editor-input {
   padding: 8px 12px;
 }
 
-/* ── Orders sub-tabs ── */
 .orders-subtabs {
   display: flex;
   gap: 4px;
@@ -3042,7 +3018,6 @@ select.editor-input {
   color: #0f172a;
 }
 
-/* Client order badge */
 .client-order-badge {
   display: inline-flex;
   align-items: center;
@@ -3055,7 +3030,6 @@ select.editor-input {
   border: 1px solid #bbf7d0;
 }
 
-/* ── Status filter bar ── */
 .status-filter-bar {
   display: flex;
   flex-wrap: wrap;
@@ -3091,7 +3065,6 @@ select.editor-input {
   border-color: #fecaca;
 }
 
-/* ── Unread badge ── */
 .unread-badge {
   display: inline-flex;
   align-items: center;
@@ -3120,7 +3093,6 @@ select.editor-input {
   50%       { box-shadow: 0 0 0 6px rgba(245, 189, 48, 0); }
 }
 
-/* ── Reason modal ── */
 .reason-modal-body {
   padding: 8px 4px 16px;
   display: flex;
@@ -3160,12 +3132,10 @@ select.editor-input {
   box-shadow: 0 2px 8px rgba(220, 38, 38, 0.07);
 }
 
-/* ── Кнопка "Посмотреть причину" — выравнивание вправо ── */
 .orders-item__responses--right {
   justify-content: flex-end;
 }
 
-/* ── Chat unread badge ── */
 .chat-thread-item--unread {
   border-color: #f5bd30;
   background: linear-gradient(135deg, #fffbf0 0%, #fff7ed 100%);
@@ -3195,7 +3165,6 @@ select.editor-input {
   to   { transform: scale(1);   opacity: 1; }
 }
 
-/* ── Direct / declined orders ── */
 .orders-status--declined {
   background: #fee2e2;
   color: #b91c1c;
@@ -3282,7 +3251,6 @@ select.editor-input {
   transform: none;
 }
 
-/* ── Orders sub-tab switcher ── */
 .orders-subtab-switcher {
   display: flex;
   gap: 4px;
@@ -3320,7 +3288,6 @@ select.editor-input {
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
 }
 
-/* ── Orders filter ── */
 .orders-filter {
   display: flex;
   align-items: center;
@@ -3378,7 +3345,6 @@ select.editor-input {
   color: #ffffff;
 }
 
-/* ── Clients subtab labels ── */
 .orders-item__head-right {
   display: flex;
   flex-direction: column;
@@ -3396,11 +3362,6 @@ select.editor-input {
   color: #64748b;
   font-style: italic;
 }
-
-
-/* ══════════════════════════════════════
-   UserProfile — маркетплейс layout
-   ══════════════════════════════════════ */
 
 .uprofile-main {
   max-width: 1200px;
@@ -3437,7 +3398,6 @@ select.editor-input {
   color: #0f172a;
 }
 
-/* ── Основной двухколоночный блок ── */
 .uprofile-page {
   display: grid;
   grid-template-columns: 520px 1fr;
@@ -3463,7 +3423,6 @@ select.editor-input {
   color: #0f172a;
 }
 
-/* ══ ГАЛЕРЕЯ (левая колонка) ══ */
 .uprofile-gallery {
   display: grid;
   grid-template-columns: 72px 1fr;
@@ -3622,7 +3581,6 @@ select.editor-input {
   color: #fff;
 }
 
-/* ══ ИНФОРМАЦИЯ (правая колонка) ══ */
 .uprofile-info {
   display: flex;
   flex-direction: column;
@@ -3743,7 +3701,6 @@ select.editor-input {
   box-shadow: 0 8px 20px rgba(245,189,48,0.4);
 }
 
-/* Характеристики */
 .uprofile-info__specs {
   display: flex;
   flex-direction: column;
@@ -3786,7 +3743,6 @@ select.editor-input {
   max-width: 60%;
 }
 
-/* О себе — белый фон */
 .uprofile-info__section-title {
   font-size: 12px;
   font-weight: 700;
@@ -3820,7 +3776,6 @@ select.editor-input {
   flex-direction: column;
 }
 
-/* Отзывы */
 .uprofile-reviews {
   background: #ffffff;
   border: 1px solid #e2e8f0;
@@ -3845,7 +3800,6 @@ select.editor-input {
 
 .uprofile-reviews__avg { font-size: 16px; font-weight: 700; color: #f5bd30; }
 
-/* Адаптив */
 @media (max-width: 1000px) {
   .uprofile-page {
     grid-template-columns: 1fr;
@@ -3878,7 +3832,6 @@ select.editor-input {
   .uprofile-info__name { font-size: 20px; }
 }
 
-/* ── Заглушка "не исполнитель" ── */
 .uprofile-not-executor {
   display: flex;
   flex-direction: column;
@@ -3910,7 +3863,6 @@ select.editor-input {
   color: #64748b;
 }
 
-/* ── Кнопки рабочего кабинета ── */
 .executor-cabinet-actions {
   display: flex;
   align-items: center;
@@ -3944,7 +3896,6 @@ select.editor-input {
   transform: none;
 }
 
-/* ── Пустая галерея ── */
 .uprofile-gallery__no-works {
   display: flex;
   flex-direction: column;
@@ -3969,3 +3920,5 @@ select.editor-input {
   text-align: center;
   padding: 0 20px;
 }
+
+

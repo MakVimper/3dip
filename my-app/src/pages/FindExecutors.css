@@ -1,4 +1,4 @@
-.fe-page {
+﻿.fe-page {
   min-height: 100vh;
   background: #f0f4f8;
 }
@@ -9,7 +9,6 @@
   padding: 32px 20px 60px;
 }
 
-/* Hero */
 .fe-hero {
   margin-bottom: 28px;
 }
@@ -27,7 +26,6 @@
   color: #64748b;
 }
 
-/* Layout */
 .fe-layout {
   display: grid;
   grid-template-columns: 260px 1fr;
@@ -35,7 +33,6 @@
   align-items: start;
 }
 
-/* ── Sidebar ── */
 .fe-sidebar {
   background: #ffffff;
   border-radius: 18px;
@@ -168,7 +165,6 @@
   background: #e2e8f0;
 }
 
-/* ── Content ── */
 .fe-content {
   min-width: 0;
 }
@@ -186,14 +182,12 @@
   text-align: center;
 }
 
-/* ── List ── */
 .fe-list {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-/* ── Card ── */
 .fe-card {
   background: #ffffff;
   border-radius: 16px;
@@ -210,7 +204,6 @@
   box-shadow: 0 6px 24px rgba(15, 23, 42, 0.11);
 }
 
-/* Head */
 .fe-card__head {
   display: flex;
   gap: 16px;
@@ -273,7 +266,6 @@
   overflow: hidden;
 }
 
-/* Works strip */
 .fe-card__works-strip {
   display: flex;
   gap: 8px;
@@ -321,7 +313,6 @@
   letter-spacing: 0.5px;
 }
 
-/* Services */
 .fe-card__services {
   display: flex;
   flex-direction: column;
@@ -356,7 +347,6 @@
   white-space: nowrap;
 }
 
-/* Actions */
 .fe-card__actions {
   display: flex;
   gap: 10px;
@@ -395,7 +385,6 @@
   color: #ffffff;
 }
 
-/* Responsive */
 @media (max-width: 900px) {
   .fe-layout {
     grid-template-columns: 1fr;
@@ -437,7 +426,6 @@
   }
 }
 
-/* ── Checkbox group ── */
 .fe-checkbox-group {
   display: flex;
   flex-direction: column;
@@ -505,3 +493,5 @@
   font-size: 12px;
   color: #94a3b8;
 }
+
+

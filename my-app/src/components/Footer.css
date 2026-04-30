@@ -1,4 +1,4 @@
-.footer {
+﻿.footer {
   background: #ffffff;
   display: flex;
   flex-direction: column;
@@ -54,3 +54,5 @@
   color: #9ca3af;
   margin: 4px 0 0;
 }
+
+

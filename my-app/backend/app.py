@@ -802,7 +802,6 @@ def update_executor():
     except Exception as error:
         return jsonify({'message': f'Executor update failed: {str(error)}'}), 500
 
-
 @app.delete('/api/executors')
 def delete_executor():
     user_id = request.args.get('userId', '').strip()
@@ -1067,8 +1066,6 @@ def accept_order_executor():
 
                 if response_row is None:
                     return jsonify({'message': 'Response not found'}), 404
-
-                # Удаляем чаты с невыбранными исполнителями
                 cur.execute(
                     '''
                     DELETE FROM chat_messages
@@ -1080,8 +1077,6 @@ def accept_order_executor():
                     ''',
                     (int(order_id), int(user_id), int(executor_user_id), int(user_id), int(executor_user_id)),
                 )
-
-                # Удаляем отклики невыбранных исполнителей
                 cur.execute(
                     '''
                     DELETE FROM order_responses
@@ -2138,7 +2133,6 @@ def create_order():
     except Exception as error:
         return jsonify({'message': f'Create order failed: {str(error)}'}), 500
 
-
 @app.post('/api/verification/send')
 def send_verification_code():
     """Генерирует 6-значный код и отправляет на email пользователя."""
@@ -2190,7 +2184,6 @@ def send_verification_code():
     except Exception as e:
         return jsonify({'message': f'Send code failed: {str(e)}'}), 500
 
-
 @app.post('/api/verification/check')
 def check_verification_code():
     """Проверяет код подтверждения."""
@@ -2235,7 +2228,6 @@ def check_verification_code():
     except Exception as e:
         return jsonify({'message': f'Check code failed: {str(e)}'}), 500
 
-
 if __name__ == '__main__':
     ensure_users_table()
     ensure_executors_table()
@@ -2250,3 +2242,5 @@ if __name__ == '__main__':
     ensure_admin_account()
     port = int(os.getenv('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+
+

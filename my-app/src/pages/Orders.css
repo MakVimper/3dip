@@ -1,4 +1,4 @@
-.orders-page {
+﻿.orders-page {
   min-height: 100vh;
   background: linear-gradient(180deg, #f8fafc 0%, #ffffff 45%, #f1f5f9 100%);
   display: flex;
@@ -200,3 +200,5 @@
     align-items: flex-start;
   }
 }
+
+
